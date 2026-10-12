@@ -318,7 +318,7 @@ void MainWindow::build_ui() {
     connect(help_btn_, &QPushButton::clicked, this, &MainWindow::show_help);
     auto* help = new QShortcut(QKeySequence(Qt::Key_F1), this);
     connect(help, &QShortcut::activated, this, &MainWindow::show_help);
-    const std::pair<Qt::Key, int> speed_keys[] = {{Qt::Key_D, 1}, {Qt::Key_F, -1}};
+    const std::pair<Qt::Key, int> speed_keys[] = {{Qt::Key_F, 1}, {Qt::Key_D, -1}};
     for (const auto& [key, delta] : speed_keys) {
         auto* sc = new QShortcut(QKeySequence(key), this);
         connect(sc, &QShortcut::activated, this, [this, delta] {
@@ -378,8 +378,8 @@ void MainWindow::show_help() {
     add("<tr><td><b>Shift+B</b></td><td>5프레임 뒤로</td></tr>");
     add("<tr><td><b>Space</b></td><td>구간 반복 재생 / 정지</td></tr>");
     add("<tr><td><b>O</b> / <b>Tab</b></td><td>겹쳐 보기 켜기/끄기</td></tr>");
-    add("<tr><td><b>D</b></td><td>재생 속도 한 단계 빠르게</td></tr>");
-    add("<tr><td><b>F</b></td><td>재생 속도 한 단계 느리게</td></tr>");
+    add("<tr><td><b>F</b></td><td>재생 속도 한 단계 빠르게</td></tr>");
+    add("<tr><td><b>D</b></td><td>재생 속도 한 단계 느리게</td></tr>");
     add("<tr><td><b>F1</b></td><td>도움말</td></tr>");
     add("</table>");
     box.setText(html);
