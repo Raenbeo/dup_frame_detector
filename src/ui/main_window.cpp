@@ -129,8 +129,8 @@ void MainWindow::build_ui() {
     // search row
     auto* row3 = new QHBoxLayout;
     search_btn_ = new QPushButton(tr("탐색"));
-    next_btn_ = new QPushButton(tr("다음 구간 탐색"));
-    next_btn_->setToolTip(tr("현재 반복 구간의 반복이 끝난 뒤, 같은 구간이 다시 나타나는 곳을 찾음"));
+    next_btn_ = new QPushButton(tr("E 이후 S 일치 찾기"));
+    next_btn_->setToolTip(tr("S는 그대로 두고, 현재 끝(E) 다음 프레임부터 S와 일치하는 프레임을 찾아 구간 끝을 늘림"));
     cancel_btn_ = new QPushButton(tr("취소"));
     progress_ = new QProgressBar;
     progress_->setRange(0, 1000);
@@ -630,7 +630,7 @@ void MainWindow::on_search_done(const LoopResult& r) {
         break;
     case LoopStatus::NotFound:
         progress_->setValue(1000);
-        show_result(tr(loop_ ? "다음 구간 없음" : "반복 없음"));
+        show_result(tr(loop_ ? "E 이후 일치 프레임 없음" : "반복 없음"));
         break;
     case LoopStatus::Cancelled:
         show_result(tr("취소됨"));

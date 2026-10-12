@@ -120,9 +120,11 @@ cv::Mat downscale_mask(const cv::Mat& mask, cv::Size size) {
 }  // namespace
 
 LoopResult find_loop(const FrameSource& next, int start, int frame_count,
-                     const cv::Mat& include_mask, const LoopOptions& opts) {
+                     const cv::Mat& include_mask, const LoopOptions& opts, int from) {
     LoopResult res;
     if (start < 0 || start >= frame_count) return res;
+    if (from < 0) from = start + 1;
+    if (from <= start) return res;
 
     const cv::Mat s = to_gray(next());
     if (s.empty()) return res;
@@ -149,8 +151,8 @@ LoopResult find_loop(const FrameSource& next, int start, int frame_count,
     // Adjacent frames of slow/static footage match S immediately. Only accept a
     // match after at least one frame has departed from S (similarity < threshold).
     bool departed = false;
-    const int total = frame_count - 1 - start;
-    for (int i = start + 1, done = 1; i < frame_count; ++i, ++done) {
+    const int total = frame_count - from;
+    for (int i = from, done = 1; i < frame_count; ++i, ++done) {
         if (opts.stop.stop_requested()) {
             res.status = LoopStatus::Cancelled;
             return res;
@@ -194,84 +196,26 @@ LoopResult find_next_loop(Decoder& dec, const LoopRange& prev, const cv::Mat& in
                           const LoopOptions& opts) {
     LoopResult res;
     if (!prev.found() || !dec.seek(prev.start)) return res;
-    const int count = dec.frame_count();
-    const int len = prev.end - prev.start + 1;
-
-    const cv::Mat s = to_gray(dec.next());
+    const cv::Mat s = dec.next();
     if (s.empty()) return res;
-    if (!include_mask.empty() &&
-        (include_mask.size() != s.size() || include_mask.type() != CV_8UC1))
-        return res;
-
-    const bool coarse = opts.coarse_div > 1 && s.cols >= opts.coarse_div &&
-                        s.rows >= opts.coarse_div;
-    cv::Size csize;
-    cv::Mat mask_small;
-    if (coarse) {
-        csize = {s.cols / opts.coarse_div, s.rows / opts.coarse_div};
-        mask_small = downscale_mask(include_mask, csize);
-    }
-    const double coarse_threshold =
-        opts.threshold - (opts.metric == Metric::Mae ? 1.0 / 255.0 : 0.05);
-    const auto small = [&](const cv::Mat& g) { return coarse ? downscale(g, csize) : g; };
-    const cv::Mat& cmask = coarse ? mask_small : include_mask;
-    const double cthr = coarse ? coarse_threshold : opts.threshold;
-
-    // One cycle of the current loop; later frames are compared with the same phase.
-    std::vector<cv::Mat> cycle;
-    cycle.reserve(len);
-    const cv::Mat s_small = small(s);
-    cycle.push_back(s_small);
-
-    const int total = count - 1 - prev.start;
-    bool broke = false;  // the repetition run has ended
-    int s2 = -1;
-    cv::Mat s2_frame;
-    for (int i = prev.start + 1, done = 1; i < count; ++i, ++done) {
-        if (opts.stop.stop_requested()) {
-            res.status = LoopStatus::Cancelled;
-            return res;
-        }
-        cv::Mat f = dec.next();
-        if (f.empty()) break;
-        f = to_gray(f);
-        if (f.size() != s.size()) return res;
-        const cv::Mat fs = small(f);
-        if (i <= prev.end) {
-            cycle.push_back(fs);
-        } else {
-            if (!broke &&
-                similarity(cycle[(i - prev.start) % len], fs, cmask, opts.metric) < cthr)
-                broke = true;
-            if (broke && similarity(s_small, fs, cmask, opts.metric) >= cthr &&
-                similarity(s, f, include_mask, opts.metric) >= opts.threshold) {
-                s2 = i;
-                s2_frame = f;
-                break;
-            }
-        }
-        if (opts.progress) opts.progress(done, total);
-    }
-    if (s2 < 0) {
-        res.status = LoopStatus::NotFound;
+    const int from = prev.end + 2;  // E + 1, where E = prev.end + 1 matched S
+    if (from >= dec.frame_count()) {
+        res.status = LoopStatus::NotFound;  // nothing after E
         return res;
     }
+    if (!dec.seek(from)) return res;
 
-    // Continue the same sequential read: yield S2 first, then the following frames.
+    // Yield S first, then E+1, E+2, ...
     bool first = true;
-    LoopOptions o = opts;
-    const int off = s2 - prev.start;
-    if (opts.progress)
-        o.progress = [&opts, off](int d, int t) { opts.progress(off + d, off + t); };
     return find_loop(
         [&] {
             if (first) {
                 first = false;
-                return s2_frame;
+                return s;
             }
             return dec.next();
         },
-        s2, count, include_mask, o);
+        prev.start, dec.frame_count(), include_mask, opts, from);
 }
 
 }  // namespace dfd

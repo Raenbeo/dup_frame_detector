@@ -52,22 +52,20 @@ struct LoopOptions {
 // Returns the next frame (BGR or gray, 8-bit) in sequence; empty Mat at end.
 using FrameSource = std::function<cv::Mat()>;
 
-// `next` must yield frame S first, then S+1, S+2, ... up to `frame_count - 1`.
-// Compares S against each later frame i; stops at the first E with
-// similarity(S, E) >= threshold *after* some earlier frame fell below the
-// threshold (so near-identical neighbours of S don't end the search), and
+// `next` must yield frame S first, then `from`, from+1, ... up to `frame_count - 1`
+// (`from` defaults to S+1). Compares S against each later frame i; stops at the
+// first E with similarity(S, E) >= threshold *after* some earlier frame fell below
+// the threshold (so near-identical neighbours of S don't end the search), and
 // reports the loop [S, E-1].
 LoopResult find_loop(const FrameSource& next, int start, int frame_count,
-                     const cv::Mat& include_mask, const LoopOptions& opts);
+                     const cv::Mat& include_mask, const LoopOptions& opts, int from = -1);
 
 // Convenience overload: seeks `dec` to `start` and reads sequentially.
 LoopResult find_loop(Decoder& dec, int start, const cv::Mat& include_mask,
                      const LoopOptions& opts);
 
-// Finds the next occurrence of a loop after `prev`: skips the rest of the current
-// repetition run (frames that keep repeating prev's cycle), then looks for the first
-// later frame matching prev.start (the loop returning after other action) and
-// searches the loop [S2, E2-1] from there. result.range.start is that new S2.
+// Keeps S = prev.start and searches from E+1 (E = prev.end + 1, the frame that
+// matched S) for the next frame E2 matching S. Reports the extended loop [S, E2-1].
 LoopResult find_next_loop(Decoder& dec, const LoopRange& prev, const cv::Mat& include_mask,
                           const LoopOptions& opts);
 

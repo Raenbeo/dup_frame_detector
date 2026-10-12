@@ -60,6 +60,21 @@ void test_find_loop() {
         r = run(loop, 2, {}, o);
         CHECK(r.status == LoopStatus::Found && r.range.start == 2 && r.range.end == 6);
     }
+    // next match after E: S=0, E=5 matched; searching from E+1=6 finds E2=10 -> [0, 9]
+    {
+        bool first = true;
+        auto rest = from(loop, 6);
+        auto r = dfd::find_loop(
+            [&] {
+                if (first) {
+                    first = false;
+                    return loop[0];
+                }
+                return rest();
+            },
+            0, static_cast<int>(loop.size()), {}, {}, 6);
+        CHECK(r.status == LoopStatus::Found && r.range.start == 0 && r.range.end == 9);
+    }
     // last frame has no successor -> not found; out of range -> error
     CHECK(run(loop, 16).status == LoopStatus::NotFound);
     CHECK(run(loop, 17).status == LoopStatus::Error);
