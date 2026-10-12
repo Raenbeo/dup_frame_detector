@@ -270,6 +270,18 @@ struct Writer {
     }
 };
 
+// Full-range JPEG formats (yuvj*) hold the same samples as their yuv* twin; only the
+// range tag differs. FFV1 rejects yuvj*, so store the yuv* format and tag the range.
+AVPixelFormat ffv1_format(AVPixelFormat fmt) {
+    switch (fmt) {
+        case AV_PIX_FMT_YUVJ420P: return AV_PIX_FMT_YUV420P;
+        case AV_PIX_FMT_YUVJ422P: return AV_PIX_FMT_YUV422P;
+        case AV_PIX_FMT_YUVJ444P: return AV_PIX_FMT_YUV444P;
+        case AV_PIX_FMT_YUVJ440P: return AV_PIX_FMT_YUV440P;
+        default: return fmt;
+    }
+}
+
 }  // namespace
 
 ExportResult Decoder::export_lossless(int first, int last, const std::string& path,
@@ -297,11 +309,12 @@ ExportResult Decoder::export_lossless(int first, int last, const std::string& pa
     AVCodecContext* e = w.enc;
     e->width = f0->width;
     e->height = f0->height;
-    e->pix_fmt = static_cast<AVPixelFormat>(f0->format);  // keep native format: no conversion
+    const auto src_fmt = static_cast<AVPixelFormat>(f0->format);
+    e->pix_fmt = ffv1_format(src_fmt);  // same samples, no conversion
     e->time_base = in->time_base;
     e->framerate = in->avg_frame_rate;
     e->sample_aspect_ratio = f0->sample_aspect_ratio;
-    e->color_range = f0->color_range;
+    e->color_range = e->pix_fmt != src_fmt ? AVCOL_RANGE_JPEG : f0->color_range;
     e->colorspace = f0->colorspace;
     e->color_primaries = f0->color_primaries;
     e->color_trc = f0->color_trc;
@@ -349,12 +362,16 @@ ExportResult Decoder::export_lossless(int first, int last, const std::string& pa
         }
         d.pending = false;
         if (d.frame->width != e->width || d.frame->height != e->height ||
-            d.frame->format != e->pix_fmt) {
+            d.frame->format != src_fmt) {
             res = fail("frame format changed mid-stream at frame " + std::to_string(i));
             break;
         }
         av_frame_unref(out);
         av_frame_ref(out, d.frame);
+        if (out->format != e->pix_fmt) {
+            out->format = e->pix_fmt;
+            out->color_range = AVCOL_RANGE_JPEG;
+        }
         out->pts = d.pts[i] - base;
         out->pict_type = AV_PICTURE_TYPE_NONE;
         if ((r = w.write(out)) < 0) {
