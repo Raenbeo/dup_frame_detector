@@ -1,0 +1,107 @@
+#pragma once
+
+#include "decoder/decoder.hpp"
+#include "matcher/matcher.hpp"
+
+#include <QMainWindow>
+#include <QString>
+#include <QTimer>
+
+#include <optional>
+#include <thread>
+
+class QComboBox;
+class QLabel;
+class QProgressBar;
+class QPushButton;
+class QLineEdit;
+class QSlider;
+class QSpinBox;
+class QToolButton;
+
+namespace dfd {
+
+class Timeline;
+class VideoView;
+
+class MainWindow : public QMainWindow {
+    Q_OBJECT
+public:
+    explicit MainWindow(QWidget* parent = nullptr);
+    ~MainWindow() override;
+
+    bool open_video(const QString& path);
+    void show_frame(int index);
+    void set_start_from_current();
+    void start_search();
+    void cancel_search();
+    // Lossless (FFV1/MKV) export of the found loop. Empty path -> ask with a dialog.
+    void export_loop(const QString& path = {});
+    void set_playing(bool playing);
+
+    int current_frame() const { return cur_; }
+    int start_frame() const { return start_; }
+    std::optional<LoopRange> loop() const { return loop_; }
+    bool searching() const { return searching_; }
+    bool exporting() const { return exporting_; }
+    bool playing() const { return play_timer_.isActive(); }
+    Metric metric() const;
+    void set_metric(Metric m);  // also resets the threshold to the metric's default
+    double threshold() const;
+    void set_threshold(double t);  // [0, 1]
+    VideoView* view() const { return view_; }
+    Timeline* timeline() const { return timeline_; }
+
+signals:
+    void searchFinished(dfd::LoopStatus status);
+    void exportFinished(bool ok, QString message);
+
+private:
+    void build_ui();
+    void scrub(int frame);
+    void invalidate_loop();
+    void on_search_done(const LoopResult& r);
+    void on_export_done(const ExportResult& r, const QString& path);
+    bool busy() const { return searching_ || exporting_; }
+    void update_info();
+    void update_enabled();
+    void tick();
+
+    Decoder dec_;
+    QString path_;
+    int count_ = 0;
+    int cur_ = 0;
+    int dec_next_ = -1;  // frame index the decoder returns on next()
+    int start_ = -1;
+    std::optional<LoopRange> loop_;
+    bool searching_ = false;
+    bool exporting_ = false;
+
+    VideoView* view_ = nullptr;
+    Timeline* timeline_ = nullptr;
+    QSpinBox* frame_spin_ = nullptr;
+    QLabel* info_ = nullptr;
+    QLabel* start_label_ = nullptr;
+    QComboBox* metric_combo_ = nullptr;
+    QSlider* threshold_slider_ = nullptr;
+    QLabel* threshold_label_ = nullptr;
+    QToolButton* brush_btn_ = nullptr;
+    QToolButton* eraser_btn_ = nullptr;
+    QSlider* brush_slider_ = nullptr;
+    QLabel* brush_label_ = nullptr;
+    QPushButton* open_btn_ = nullptr;
+    QLineEdit* path_edit_ = nullptr;
+    QPushButton* set_start_btn_ = nullptr;
+    QPushButton* clear_mask_btn_ = nullptr;
+    QPushButton* search_btn_ = nullptr;
+    QPushButton* cancel_btn_ = nullptr;
+    QPushButton* play_btn_ = nullptr;
+    QPushButton* export_btn_ = nullptr;
+    QProgressBar* progress_ = nullptr;
+    QLabel* result_ = nullptr;
+    QTimer play_timer_;
+
+    std::jthread worker_;  // keep last: joined first on destruction
+};
+
+}  // namespace dfd
