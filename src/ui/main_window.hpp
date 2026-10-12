@@ -59,6 +59,9 @@ public:
     std::optional<LoopRange> loop() const { return loop_; }
     bool searching() const { return searching_; }
     bool exporting() const { return exporting_; }
+    bool overlay() const;
+    int tint() const { return tint_; }
+    void set_overlay(bool on);
     bool playing() const { return play_timer_.isActive(); }
     Metric metric() const;
     void set_metric(Metric m);  // also resets the threshold to the metric's default
@@ -77,6 +80,8 @@ private:
     void scrub(int frame);
     void show_help();
     void show_loop_frame(int index);
+    void cycle_tint();
+    void apply_overlay();  // overlay mode: loop frame blended onto the original view
     void invalidate_loop();
     void run_search(std::optional<LoopRange> prev);
     void on_search_done(const LoopResult& r);
@@ -93,6 +98,7 @@ private:
     Decoder loop_dec_;      // feeds the loop view; independent of dec_ so both play at once
     int loop_dec_next_ = -1;
     int loop_cur_ = -1;
+    cv::Mat loop_bgr_;  // pixels of the loop frame currently shown
     QString path_;
     int count_ = 0;
     int cur_ = 0;
@@ -126,6 +132,10 @@ private:
     QPushButton* next_btn_ = nullptr;
     QPushButton* cancel_btn_ = nullptr;
     QPushButton* play_btn_ = nullptr;
+    QPushButton* overlay_btn_ = nullptr;
+    QSlider* overlay_slider_ = nullptr;
+    QPushButton* tint_btn_ = nullptr;
+    int tint_ = 0;  // index into the colour-filter cycle
     QPushButton* export_btn_ = nullptr;
     QPushButton* save_png_btn_ = nullptr;
     QPushButton* save_native_btn_ = nullptr;

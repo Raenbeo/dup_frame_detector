@@ -101,6 +101,10 @@ int main(int argc, char** argv) {
 
     // loop playback: right view wraps inside [10, 39] while the original runs straight on
     CHECK(w.loop_view()->isVisible() && w.loop_frame() == 10);
+    w.set_overlay(true);  // loop view folds into the original view
+    CHECK(w.overlay() && !w.loop_view()->isVisible());
+    w.set_overlay(false);
+    CHECK(!w.overlay() && w.loop_view()->isVisible());
     w.set_playing(true);
     CHECK(w.playing());
     int max_seen = 0, min_seen = 1 << 30;

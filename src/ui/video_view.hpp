@@ -27,6 +27,13 @@ public:
     // Label badge drawn in the top-left corner of the picture. Empty -> none.
     void set_caption(const QString& text, QColor color = QColor(40, 40, 40, 200));
 
+    // Second frame blended over the shown one (same resolution expected). Empty -> none.
+    void set_blend_frame(const cv::Mat& bgr);
+    void set_blend_opacity(double opacity);  // [0, 1]
+    // Colour filter for the blended frame: keeps only the channels set in `tint` (RGB multiplier).
+    // White -> unfiltered.
+    void set_blend_tint(QColor tint);
+
     void set_brush_radius(int radius_px);  // in video pixels
     void set_eraser(bool eraser);
     // Display-only views ignore the mouse (no mask painting, no brush cursor).
@@ -64,6 +71,11 @@ private:
     QString message_;
     QString caption_;
     QColor caption_color_;
+    cv::Mat blend_src_;  // unfiltered blend frame (BGR)
+    QColor blend_tint_ = Qt::white;
+    void rebuild_blend();
+    QImage blend_;
+    double blend_opacity_ = 0.5;
     QImage overlay_;  // ARGB32_Premultiplied, mirrors mask_
     cv::Mat mask_;    // CV_8UC1, 255 = excluded
     int radius_ = 20;

@@ -28,6 +28,38 @@ void VideoView::set_frame(const cv::Mat& bgr) {
     update();
 }
 
+void VideoView::set_blend_frame(const cv::Mat& bgr) {
+    if (!bgr.empty() && bgr.type() != CV_8UC3) return;
+    blend_src_ = bgr;
+    rebuild_blend();
+}
+
+void VideoView::set_blend_tint(QColor tint) {
+    blend_tint_ = tint;
+    rebuild_blend();
+}
+
+void VideoView::rebuild_blend() {
+    if (blend_src_.empty()) {
+        blend_ = QImage();
+    } else {
+        cv::Mat src = blend_src_;
+        if (blend_tint_ != QColor(Qt::white)) {
+            cv::multiply(blend_src_, cv::Scalar(blend_tint_.blue(), blend_tint_.green(), blend_tint_.red()),
+                         src, 1.0 / 255.0);
+        }
+        blend_ = QImage(src.data, src.cols, src.rows, static_cast<qsizetype>(src.step[0]),
+                        QImage::Format_BGR888)
+                     .copy();
+    }
+    update();
+}
+
+void VideoView::set_blend_opacity(double opacity) {
+    blend_opacity_ = std::clamp(opacity, 0.0, 1.0);
+    update();
+}
+
 void VideoView::set_message(const QString& text) {
     message_ = text;
     update();
@@ -35,6 +67,8 @@ void VideoView::set_message(const QString& text) {
 
 void VideoView::clear_frame() {
     frame_ = QImage();
+    blend_ = QImage();
+    blend_src_.release();
     mask_.release();
     overlay_ = QImage();
     in_loop_ = false;
@@ -131,6 +165,11 @@ void VideoView::paintEvent(QPaintEvent*) {
     }
     const QRectF r = image_rect();
     p.drawImage(r, frame_);
+    if (!blend_.isNull()) {
+        p.setOpacity(blend_opacity_);
+        p.drawImage(r, blend_);
+        p.setOpacity(1.0);
+    }
     p.drawImage(r, overlay_);
 
     if (in_loop_) {

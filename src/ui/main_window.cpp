@@ -182,6 +182,20 @@ void MainWindow::build_ui() {
     format_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     save_native_btn_ = new QPushButton(tr("원본 저장 (고품질 PNG)"));
     save_png_btn_ = new QPushButton(tr("PNG로 저장"));
+    overlay_btn_ = new QPushButton(tr("겹쳐 보기"));
+    overlay_btn_->setCheckable(true);
+    overlay_btn_->setToolTip(tr("원본 위에 반복 구간 화면을 반투명으로 겹쳐 표시 (O)"));
+    overlay_slider_ = new QSlider(Qt::Horizontal);
+    overlay_slider_->setRange(0, 100);
+    overlay_slider_->setValue(50);
+    overlay_slider_->setFixedWidth(120);
+    overlay_slider_->setToolTip(tr("겹친 화면의 불투명도"));
+    row4->addWidget(overlay_btn_);
+    tint_btn_ = new QPushButton(tr("색상 필터: 없음"));
+    tint_btn_->setToolTip(tr("겹친 화면에 색상 필터 적용 (누를 때마다 없음 → 빨강 → 초록 → 파랑 → 시안). "
+                             "원본과 다른 색으로 겹쳐 차이를 구분"));
+    row4->addWidget(overlay_slider_);
+    row4->addWidget(tint_btn_);
     row4->addWidget(format_label_, 1);
     row4->addWidget(save_native_btn_);
     row4->addWidget(save_png_btn_);
@@ -254,6 +268,14 @@ void MainWindow::build_ui() {
         auto* sc = new QShortcut(QKeySequence(key), this);
         connect(sc, &QShortcut::activated, this, [this, step] { scrub(cur_ + step); });
     }
+    connect(overlay_btn_, &QPushButton::clicked, this, &MainWindow::set_overlay);
+    connect(tint_btn_, &QPushButton::clicked, this, &MainWindow::cycle_tint);
+    connect(overlay_slider_, &QSlider::valueChanged, this,
+            [this](int v) { view_->set_blend_opacity(v / 100.0); });
+    auto* overlay_key = new QShortcut(QKeySequence(Qt::Key_O), this);
+    connect(overlay_key, &QShortcut::activated, this, [this] {
+        if (loop_) set_overlay(!overlay());
+    });
     connect(help_btn_, &QPushButton::clicked, this, &MainWindow::show_help);
     auto* help = new QShortcut(QKeySequence(Qt::Key_F1), this);
     connect(help, &QShortcut::activated, this, &MainWindow::show_help);
@@ -273,12 +295,25 @@ void MainWindow::show_help() {
         "반복 구간은 <b>[S, E-1]</b>입니다.</p>"
         "<h4>사용 순서</h4>"
         "<ol>"
-        "<li><b>열기...</b>로 영상을 엽니다. 경로 칸에 직접 입력해도 됩니다.</li>"
-        "<li>원하는 프레임으로 이동한 뒤 <b>현재 프레임을 S로</b>를 누릅니다.</li>"
-        "<li>자막, 시계처럼 바뀌는 부분은 화면에 <b>브러시</b>로 칠해 비교에서 뺍니다.</li>"
+        "<li><b>열기...</b>로 영상을 엽니다. 경로 칸에 직접 입력하거나 파일을 창에 끌어다 놓아도 됩니다.</li>"
+        "<li>타임라인을 클릭하거나 프레임 칸/단축키로 원하는 프레임에 이동한 뒤 <b>현재 프레임을 S로</b>를 누릅니다.</li>"
+        "<li>자막, 시계처럼 바뀌는 부분은 화면에 <b>브러시</b>로 칠해 비교에서 뺍니다. "
+        "<b>지우개</b>로 일부만 지우거나 <b>마스크 지우기</b>로 전부 지웁니다. 마스크를 고치면 이전 결과는 사라집니다.</li>"
         "<li><b>비교 방식</b>과 <b>일치도</b>를 고른 뒤 <b>탐색</b>을 누릅니다.</li>"
-        "<li>찾으면 타임라인에 구간이 표시되고 <b>구간 반복 재생</b>, <b>구간 추출</b>을 쓸 수 있습니다.</li>"
+        "<li>찾으면 타임라인에 구간이 표시되고, 화면이 왼쪽 <b>원본</b>과 오른쪽 <b>반복 구간</b>으로 나뉩니다. "
+        "탐색 중에는 <b>취소</b>할 수 있고, 끝까지 없으면 \"반복 없음\"이 표시됩니다.</li>"
         "</ol>"
+        "<h4>결과 활용</h4>"
+        "<ul>"
+        "<li><b>구간 반복 재생</b>: 원본은 계속 재생되고, 오른쪽 화면은 [S, E-1]만 반복합니다.</li>"
+        "<li><b>겹쳐 보기</b>: 원본 위에 반복 구간 화면을 반투명으로 겹쳐 두 화면의 차이를 확인합니다. "
+        "옆 슬라이더로 불투명도를, <b>색상 필터</b> 버튼으로 겹친 화면의 색(빨강/초록/파랑/시안)을 바꿉니다. "
+        "다시 누르면 좌우 분할로 돌아갑니다.</li>"
+        "<li><b>E 이후 S 일치 찾기</b>: S는 그대로 두고 E 다음 프레임부터 S와 일치하는 프레임을 더 찾아 구간 끝을 늘립니다.</li>"
+        "<li><b>구간 추출 (무손실)</b>: 찾은 구간을 FFV1/MKV로 저장합니다.</li>"
+        "<li><b>PNG로 저장</b> / <b>원본 저장 (고품질 PNG)</b>: 현재 프레임을 저장합니다. "
+        "고품질 쪽은 영상의 색 행렬/범위와 10비트 이상 색심도를 반영합니다.</li>"
+        "</ul>"
         "<h4>비교 방식</h4>"
         "<ul>"
         "<li><b>MAE</b>: 픽셀 값 차이. 무손실/고화질 영상</li>"
@@ -291,9 +326,10 @@ void MainWindow::show_help() {
         "<table cellpadding='2'>"
         "<tr><td><b>W</b> / <b>→</b></td><td>다음 프레임</td></tr>"
         "<tr><td><b>B</b> / <b>←</b></td><td>이전 프레임</td></tr>"
-        "<tr><td><b>Shift+W</b></td><td>5프레임 앞으로</td></tr>"
+                "<tr><td><b>Shift+W</b></td><td>5프레임 앞으로</td></tr>"
         "<tr><td><b>Shift+B</b></td><td>5프레임 뒤로</td></tr>"
         "<tr><td><b>Space</b></td><td>구간 반복 재생 / 정지</td></tr>"
+        "<tr><td><b>O</b></td><td>겹쳐 보기 켜기/끄기</td></tr>"
         "<tr><td><b>F1</b></td><td>도움말</td></tr>"
         "</table>"));
     box.exec();
@@ -355,6 +391,7 @@ bool MainWindow::open_video(const QString& path) {
     loop_.reset();
     loop_view_->hide();
     loop_view_->clear_frame();
+    view_->set_blend_frame({});
     loop_cur_ = -1;
     loop_dec_next_ = -1;
     timeline_->set_frame_count(count_);
@@ -409,7 +446,35 @@ void MainWindow::show_loop_frame(int index) {
     }
     loop_dec_next_ = index + 1;
     loop_cur_ = index;
+    loop_bgr_ = f;
     loop_view_->set_frame(f);
+    if (overlay()) view_->set_blend_frame(f);
+}
+
+bool MainWindow::overlay() const { return overlay_btn_->isChecked(); }
+
+void MainWindow::set_overlay(bool on) {
+    overlay_btn_->setChecked(on);
+    apply_overlay();
+}
+
+void MainWindow::cycle_tint() {
+    struct Tint { const char* name; QColor color; };
+    static const Tint tints[] = {
+        {"없음", Qt::white}, {"빨강", QColor(255, 0, 0)}, {"초록", QColor(0, 255, 0)},
+        {"파랑", QColor(0, 0, 255)}, {"시안", QColor(0, 255, 255)},
+    };
+    tint_ = (tint_ + 1) % static_cast<int>(std::size(tints));
+    tint_btn_->setText(tr("색상 필터: %1").arg(tr(tints[tint_].name)));
+    view_->set_blend_tint(tints[tint_].color);
+}
+
+void MainWindow::apply_overlay() {
+    const bool on = overlay() && loop_;
+    loop_view_->setVisible(loop_.has_value() && !on);
+    view_->set_blend_frame(on ? loop_bgr_ : cv::Mat());
+    if (on) split_->setSizes({1, 0});
+    else if (loop_) split_->setSizes({1, 1});
 }
 
 void MainWindow::scrub(int frame) {
@@ -433,6 +498,7 @@ void MainWindow::invalidate_loop() {
     loop_.reset();
     loop_view_->hide();
     loop_view_->clear_frame();
+    view_->set_blend_frame({});
     loop_cur_ = -1;
     timeline_->clear_loop();
     view_->set_in_loop(false);
@@ -683,9 +749,8 @@ void MainWindow::on_search_done(const LoopResult& r) {
                                         .arg(r.range.end)
                                         .arg(format_time(r.range.end - r.range.start + 1, dec_.fps())),
                                     QColor(255, 170, 0, 230));
-            loop_view_->show();
-            split_->setSizes({1, 1});  // equal halves so both pictures have the same size
             show_loop_frame(r.range.start);
+            apply_overlay();  // split view (equal halves) or blended onto the original
         }
         break;
     case LoopStatus::NotFound:
@@ -758,6 +823,9 @@ void MainWindow::update_enabled() {
     save_png_btn_->setEnabled(loaded && idle);
     save_native_btn_->setEnabled(loaded && idle);
     play_btn_->setEnabled(loop_.has_value() && idle);
+    overlay_btn_->setEnabled(loop_.has_value());
+    overlay_slider_->setEnabled(loop_.has_value());
+    tint_btn_->setEnabled(loop_.has_value());
 }
 
 }  // namespace dfd
