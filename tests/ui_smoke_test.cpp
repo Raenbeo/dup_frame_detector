@@ -11,6 +11,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QImage>
 #include <QTest>
 #include <QTimer>
 
@@ -54,6 +55,25 @@ int main(int argc, char** argv) {
     // scrub + S
     w.timeline()->frameRequested(10);
     CHECK(w.current_frame() == 10);
+    {
+        const QString png = QDir::temp().filePath("dfd_frame_test.png");
+        CHECK(w.save_frame_png(png));
+        const QImage img(png);
+        CHECK(img.size() == QSize(640, 480));
+        QFile::remove(png);
+
+        const dfd::PixelInfo pi = w.pixel_info();
+        CHECK(pi.valid);
+        if (pi.planar_saveable) {
+            const QString meta = QDir::temp().filePath("dfd_native_test.txt");
+            CHECK(w.save_frame_native(meta));
+            const QImage y(QDir::temp().filePath("dfd_native_test_Y.png"));
+            CHECK(y.size() == QSize(640, 480));
+            QFile::remove(meta);
+            for (const char* n : {"Y", "U", "V", "G", "B", "R", "A"})
+                QFile::remove(QDir::temp().filePath(QString("dfd_native_test_%1.png").arg(n)));
+        }
+    }
     w.set_start_from_current();
     CHECK(w.start_frame() == 10);
 

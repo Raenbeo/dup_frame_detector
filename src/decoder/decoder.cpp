@@ -7,10 +7,12 @@ extern "C" {
 #include <libavformat/avformat.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/opt.h>
+#include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
 }
 
 #include <algorithm>
+#include <cstring>
 #include <filesystem>
 #include <vector>
 
@@ -93,6 +95,11 @@ struct Decoder::Impl {
         return out;
     }
 
+    const AVPixFmtDescriptor* desc() const {
+        if (!frame || frame->format < 0 || frame->width <= 0) return nullptr;
+        return av_pix_fmt_desc_get(static_cast<AVPixelFormat>(frame->format));
+    }
+
     int64_t frame_pts() const {
         return frame->best_effort_timestamp != AV_NOPTS_VALUE ? frame->best_effort_timestamp
                                                               : frame->pts;
@@ -152,6 +159,58 @@ bool Decoder::seek(int index) {
         }
     }
     return false;
+}
+
+PixelInfo Decoder::pixel_info() const {
+    const auto& d = *impl_;
+    PixelInfo p;
+    const AVPixFmtDescriptor* desc = d.desc();
+    if (!desc) return p;
+    const auto str = [](const char* s) { return std::string(s ? s : "unknown"); };
+    p.valid = true;
+    p.pix_fmt = desc->name;
+    p.bit_depth = desc->comp[0].depth;
+    p.color_range = str(av_color_range_name(d.frame->color_range));
+    p.colorspace = str(av_color_space_name(d.frame->colorspace));
+    p.rgb = desc->flags & AV_PIX_FMT_FLAG_RGB;
+
+    const uint64_t bad = AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_HWACCEL;
+    p.png_exact = p.rgb && p.bit_depth == 8 && !(desc->flags & (bad | AV_PIX_FMT_FLAG_ALPHA));
+
+    const int bytes = p.bit_depth > 8 ? 2 : 1;
+    bool ok = p.bit_depth <= 16 && desc->nb_components > 0 &&
+              !(desc->flags & (bad | AV_PIX_FMT_FLAG_BE));
+    for (int i = 0; ok && i < desc->nb_components; ++i) {
+        const AVComponentDescriptor& c = desc->comp[i];
+        ok = c.plane == i && c.offset == 0 && c.shift == 0 && c.step == bytes &&
+             c.depth == p.bit_depth && d.frame->data[i];
+    }
+    p.planar_saveable = ok;
+    return p;
+}
+
+NativeFrame Decoder::native_frame() const {
+    const auto& d = *impl_;
+    NativeFrame nf;
+    nf.info = pixel_info();
+    if (!nf.info.planar_saveable) return nf;
+    const AVPixFmtDescriptor* desc = d.desc();
+    const int bytes = nf.info.bit_depth > 8 ? 2 : 1;
+    static const char* const rgb_names[] = {"G", "B", "R", "A"};
+    static const char* const yuv_names[] = {"Y", "U", "V", "A"};
+    const bool gray = desc->nb_components <= 2;
+    for (int i = 0; i < desc->nb_components; ++i) {
+        const bool chroma = !nf.info.rgb && !gray && (i == 1 || i == 2);
+        const int w = chroma ? AV_CEIL_RSHIFT(d.frame->width, desc->log2_chroma_w) : d.frame->width;
+        const int h = chroma ? AV_CEIL_RSHIFT(d.frame->height, desc->log2_chroma_h) : d.frame->height;
+        cv::Mat m(h, w, bytes == 2 ? CV_16UC1 : CV_8UC1);
+        for (int y = 0; y < h; ++y)
+            std::memcpy(m.ptr(y), d.frame->data[i] + static_cast<ptrdiff_t>(y) * d.frame->linesize[i],
+                        static_cast<size_t>(w) * bytes);
+        nf.planes.push_back(std::move(m));
+        nf.plane_names.push_back(nf.info.rgb ? rgb_names[i] : yuv_names[i == 1 && gray ? 3 : i]);
+    }
+    return nf;
 }
 
 cv::Mat Decoder::next() {

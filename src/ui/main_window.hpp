@@ -37,6 +37,12 @@ public:
     void cancel_search();
     // Lossless (FFV1/MKV) export of the found loop. Empty path -> ask with a dialog.
     void export_loop(const QString& path = {});
+    // Saves the currently shown frame as PNG (lossless). Empty path -> ask with a dialog.
+    bool save_frame_png(const QString& path = {});
+    // Writes the untouched decoder planes (Y/U/V, ...) of the shown frame as one PNG per
+    // plane plus a .txt describing the layout. `meta_path` is that .txt; empty -> dialog.
+    bool save_frame_native(const QString& meta_path = {});
+    const PixelInfo& pixel_info() const { return pix_info_; }
     void set_playing(bool playing);
 
     int current_frame() const { return cur_; }
@@ -64,6 +70,7 @@ private:
     void on_export_done(const ExportResult& r, const QString& path);
     bool busy() const { return searching_ || exporting_; }
     void update_info();
+    void update_format_ui();
     void update_enabled();
     void tick();
 
@@ -71,6 +78,8 @@ private:
     QString path_;
     int count_ = 0;
     int cur_ = 0;
+    PixelInfo pix_info_;
+    cv::Mat cur_bgr_;    // pixels of the frame currently shown
     int dec_next_ = -1;  // frame index the decoder returns on next()
     int start_ = -1;
     std::optional<LoopRange> loop_;
@@ -97,6 +106,9 @@ private:
     QPushButton* cancel_btn_ = nullptr;
     QPushButton* play_btn_ = nullptr;
     QPushButton* export_btn_ = nullptr;
+    QPushButton* save_png_btn_ = nullptr;
+    QPushButton* save_native_btn_ = nullptr;
+    QLabel* format_label_ = nullptr;
     QProgressBar* progress_ = nullptr;
     QLabel* result_ = nullptr;
     QTimer play_timer_;
