@@ -30,6 +30,12 @@ public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+
+public:
+
     bool open_video(const QString& path);
     void show_frame(int index);
     void set_start_from_current();

@@ -8,6 +8,9 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDropEvent>
+#include <QMimeData>
 #include <QHBoxLayout>
 #include <QImage>
 #include <QFile>
@@ -31,6 +34,7 @@ namespace dfd {
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("dup_frame_detector");
+    setAcceptDrops(true);
     resize(1280, 800);
     build_ui();
     play_timer_.setTimerType(Qt::PreciseTimer);
@@ -279,6 +283,17 @@ double MainWindow::threshold() const { return threshold_slider_->value() / 1000.
 
 void MainWindow::set_threshold(double t) {
     threshold_slider_->setValue(static_cast<int>(std::lround(std::clamp(t, 0.0, 1.0) * 1000)));
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
+    if (event->mimeData()->hasUrls() && !busy()) event->acceptProposedAction();
+}
+
+void MainWindow::dropEvent(QDropEvent* event) {
+    const QList<QUrl> urls = event->mimeData()->urls();
+    if (urls.isEmpty() || !urls.first().isLocalFile()) return;
+    event->acceptProposedAction();
+    open_video(urls.first().toLocalFile());
 }
 
 bool MainWindow::open_video(const QString& path) {
