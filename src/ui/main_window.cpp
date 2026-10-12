@@ -300,6 +300,7 @@ bool MainWindow::open_video(const QString& path) {
     if (busy()) return false;
     set_playing(false);
     const QString name = QFileInfo(path).fileName();
+    view_->clear_frame();  // drops the old frame and mask; the message shows on an empty view
     view_->set_message(tr("%1 로딩중...").arg(name));
     view_->repaint();  // show the message now; opening blocks the UI thread
     QApplication::setOverrideCursor(Qt::WaitCursor);
@@ -311,7 +312,6 @@ bool MainWindow::open_video(const QString& path) {
         cur_bgr_.release();
         pix_info_ = {};
         path_.clear();
-        view_->clear_frame();
         timeline_->set_frame_count(0);
         result_->setText(tr("영상을 열 수 없습니다: %1").arg(path));
         update_enabled();
@@ -325,7 +325,6 @@ bool MainWindow::open_video(const QString& path) {
     cur_ = 0;
     start_ = -1;
     loop_.reset();
-    view_->clear_frame();  // drops the old mask
     timeline_->set_frame_count(count_);
     start_label_->setText(tr("S: 없음"));
     result_->clear();
