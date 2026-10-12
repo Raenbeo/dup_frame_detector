@@ -64,15 +64,12 @@ int main(int argc, char** argv) {
 
         const dfd::PixelInfo pi = w.pixel_info();
         CHECK(pi.valid);
-        if (pi.planar_saveable) {
-            const QString meta = QDir::temp().filePath("dfd_native_test.txt");
-            CHECK(w.save_frame_native(meta));
-            const QImage y(QDir::temp().filePath("dfd_native_test_Y.png"));
-            CHECK(y.size() == QSize(640, 480));
-            QFile::remove(meta);
-            for (const char* n : {"Y", "U", "V", "G", "B", "R", "A"})
-                QFile::remove(QDir::temp().filePath(QString("dfd_native_test_%1.png").arg(n)));
-        }
+        const QString hq = QDir::temp().filePath("dfd_native_test.png");
+        CHECK(w.save_frame_native(hq));
+        const QImage img2(hq);
+        CHECK(img2.size() == QSize(640, 480));
+        CHECK(img2.depth() == (pi.bit_depth > 8 ? 64 : 32));
+        QFile::remove(hq);
     }
     w.set_start_from_current();
     CHECK(w.start_frame() == 10);

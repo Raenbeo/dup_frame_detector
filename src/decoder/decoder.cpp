@@ -176,41 +176,49 @@ PixelInfo Decoder::pixel_info() const {
 
     const uint64_t bad = AV_PIX_FMT_FLAG_PAL | AV_PIX_FMT_FLAG_BITSTREAM | AV_PIX_FMT_FLAG_HWACCEL;
     p.png_exact = p.rgb && p.bit_depth == 8 && !(desc->flags & (bad | AV_PIX_FMT_FLAG_ALPHA));
-
-    const int bytes = p.bit_depth > 8 ? 2 : 1;
-    bool ok = p.bit_depth <= 16 && desc->nb_components > 0 &&
-              !(desc->flags & (bad | AV_PIX_FMT_FLAG_BE));
-    for (int i = 0; ok && i < desc->nb_components; ++i) {
-        const AVComponentDescriptor& c = desc->comp[i];
-        ok = c.plane == i && c.offset == 0 && c.shift == 0 && c.step == bytes &&
-             c.depth == p.bit_depth && d.frame->data[i];
-    }
-    p.planar_saveable = ok;
     return p;
 }
 
-NativeFrame Decoder::native_frame() const {
+cv::Mat Decoder::precise_rgb() const {
     const auto& d = *impl_;
-    NativeFrame nf;
-    nf.info = pixel_info();
-    if (!nf.info.planar_saveable) return nf;
     const AVPixFmtDescriptor* desc = d.desc();
-    const int bytes = nf.info.bit_depth > 8 ? 2 : 1;
-    static const char* const rgb_names[] = {"G", "B", "R", "A"};
-    static const char* const yuv_names[] = {"Y", "U", "V", "A"};
-    const bool gray = desc->nb_components <= 2;
-    for (int i = 0; i < desc->nb_components; ++i) {
-        const bool chroma = !nf.info.rgb && !gray && (i == 1 || i == 2);
-        const int w = chroma ? AV_CEIL_RSHIFT(d.frame->width, desc->log2_chroma_w) : d.frame->width;
-        const int h = chroma ? AV_CEIL_RSHIFT(d.frame->height, desc->log2_chroma_h) : d.frame->height;
-        cv::Mat m(h, w, bytes == 2 ? CV_16UC1 : CV_8UC1);
-        for (int y = 0; y < h; ++y)
-            std::memcpy(m.ptr(y), d.frame->data[i] + static_cast<ptrdiff_t>(y) * d.frame->linesize[i],
-                        static_cast<size_t>(w) * bytes);
-        nf.planes.push_back(std::move(m));
-        nf.plane_names.push_back(nf.info.rgb ? rgb_names[i] : yuv_names[i == 1 && gray ? 3 : i]);
+    if (!desc || (desc->flags & AV_PIX_FMT_FLAG_HWACCEL)) return {};
+    const int w = d.frame->width, h = d.frame->height;
+    const auto src_fmt = static_cast<AVPixelFormat>(d.frame->format);
+    const bool deep = desc->comp[0].depth > 8;
+    const AVPixelFormat dst_fmt = deep ? AV_PIX_FMT_RGBA64LE : AV_PIX_FMT_RGB24;
+
+    SwsContext* sws = sws_getContext(
+        w, h, src_fmt, w, h, dst_fmt,
+        SWS_BICUBIC | SWS_ACCURATE_RND | SWS_FULL_CHR_H_INT | SWS_FULL_CHR_H_INP, nullptr,
+        nullptr, nullptr);
+    if (!sws) return {};
+
+    if (!(desc->flags & AV_PIX_FMT_FLAG_RGB) && desc->nb_components >= 3) {
+        // Unspecified matrix: same guess as most players (HD -> BT.709, SD -> BT.601).
+        int cs = d.frame->colorspace;
+        if (cs == AVCOL_SPC_UNSPECIFIED || cs == AVCOL_SPC_RESERVED)
+            cs = h >= 720 ? AVCOL_SPC_BT709 : AVCOL_SPC_SMPTE170M;
+        const bool jpeg_fmt = std::strncmp(desc->name, "yuvj", 4) == 0;
+        const int src_full = jpeg_fmt || d.frame->color_range == AVCOL_RANGE_JPEG;
+        sws_setColorspaceDetails(sws, sws_getCoefficients(cs), src_full,
+                                 sws_getCoefficients(SWS_CS_DEFAULT), 1, 0, 1 << 16, 1 << 16);
     }
-    return nf;
+
+    cv::Mat out(h, w, deep ? CV_16UC4 : CV_8UC3);
+    uint8_t* dst[1] = {out.data};
+    const int dst_stride[1] = {static_cast<int>(out.step[0])};
+    const int rows = sws_scale(sws, d.frame->data, d.frame->linesize, 0, h, dst, dst_stride);
+    sws_freeContext(sws);
+    if (rows != h) return {};
+    if (deep) {
+        // Opaque: alpha (if the source had one) is not part of what is shown.
+        std::vector<cv::Mat> ch;
+        cv::split(out, ch);
+        ch[3].setTo(0xFFFF);
+        cv::merge(ch, out);
+    }
+    return out;
 }
 
 cv::Mat Decoder::next() {

@@ -46,9 +46,9 @@ public:
     void export_loop(const QString& path = {});
     // Saves the currently shown frame as PNG (lossless). Empty path -> ask with a dialog.
     bool save_frame_png(const QString& path = {});
-    // Writes the untouched decoder planes (Y/U/V, ...) of the shown frame as one PNG per
-    // plane plus a .txt describing the layout. `meta_path` is that .txt; empty -> dialog.
-    bool save_frame_native(const QString& meta_path = {});
+    // Saves the shown frame as a colour PNG converted straight from the decoded frame
+    // (Decoder::precise_rgb, 16-bit for deep sources). Empty path -> ask with a dialog.
+    bool save_frame_native(const QString& path = {});
     const PixelInfo& pixel_info() const { return pix_info_; }
     void set_playing(bool playing);
 
@@ -80,6 +80,8 @@ private:
     bool busy() const { return searching_ || exporting_; }
     void update_info();
     void update_format_ui();
+    // Status text; the label is clipped instead of widening the window, full text in tooltip.
+    void show_result(const QString& text);
     void update_enabled();
     void tick();
 

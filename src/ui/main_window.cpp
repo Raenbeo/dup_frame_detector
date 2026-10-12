@@ -136,6 +136,8 @@ void MainWindow::build_ui() {
     progress_->setRange(0, 1000);
     progress_->setTextVisible(true);
     result_ = new QLabel;
+    // Long messages (file paths) must not grow the window and resize the video view.
+    result_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     play_btn_ = new QPushButton(tr("구간 반복 재생"));
     play_btn_->setCheckable(true);
     row3->addWidget(search_btn_);
@@ -152,7 +154,8 @@ void MainWindow::build_ui() {
     // frame save row
     auto* row4 = new QHBoxLayout;
     format_label_ = new QLabel;
-    save_native_btn_ = new QPushButton(tr("원본 저장 (PNG in YUV)"));
+    format_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    save_native_btn_ = new QPushButton(tr("원본 저장 (고품질 PNG)"));
     save_png_btn_ = new QPushButton(tr("PNG로 저장"));
     row4->addWidget(format_label_, 1);
     row4->addWidget(save_native_btn_);
@@ -313,7 +316,7 @@ bool MainWindow::open_video(const QString& path) {
         pix_info_ = {};
         path_.clear();
         timeline_->set_frame_count(0);
-        result_->setText(tr("영상을 열 수 없습니다: %1").arg(path));
+        show_result(tr("영상을 열 수 없습니다: %1").arg(path));
         update_enabled();
         update_info();
         update_format_ui();
@@ -327,7 +330,7 @@ bool MainWindow::open_video(const QString& path) {
     loop_.reset();
     timeline_->set_frame_count(count_);
     start_label_->setText(tr("S: 없음"));
-    result_->clear();
+    show_result({});
     progress_->setValue(0);
     frame_spin_->blockSignals(true);
     frame_spin_->setRange(0, count_ - 1);
@@ -385,7 +388,7 @@ void MainWindow::invalidate_loop() {
     loop_.reset();
     timeline_->clear_loop();
     view_->set_in_loop(false);
-    result_->clear();
+    show_result({});
     update_enabled();
 }
 
@@ -406,7 +409,7 @@ void MainWindow::run_search(std::optional<LoopRange> prev) {
 
     searching_ = true;
     progress_->setValue(0);
-    result_->setText(tr("탐색 중..."));
+    show_result(tr("탐색 중..."));
     update_enabled();
 
     LoopOptions opts;
@@ -459,7 +462,7 @@ void MainWindow::export_loop(const QString& path_arg) {
         if (QFileInfo(out).suffix().isEmpty()) out += QStringLiteral(".mkv");
     }
     if (QFileInfo(out).absoluteFilePath() == QFileInfo(path_).absoluteFilePath()) {
-        result_->setText(tr("원본 파일을 덮어쓸 수 없습니다"));
+        show_result(tr("원본 파일을 덮어쓸 수 없습니다"));
         return;
     }
 
@@ -467,7 +470,7 @@ void MainWindow::export_loop(const QString& path_arg) {
     worker_ = {};  // previous worker has already finished
     exporting_ = true;
     progress_->setValue(0);
-    result_->setText(tr("추출 중..."));
+    show_result(tr("추출 중..."));
     update_enabled();
 
     const std::string src = path_.toStdString();
@@ -510,65 +513,47 @@ bool MainWindow::save_frame_png(const QString& path_arg) {
     const QImage img(cur_bgr_.data, cur_bgr_.cols, cur_bgr_.rows,
                      static_cast<qsizetype>(cur_bgr_.step[0]), QImage::Format_BGR888);
     const bool ok = img.save(out, "PNG", 0);
-    result_->setText(ok ? tr("프레임 %1 저장 완료: %2").arg(cur_).arg(out)
+    show_result(ok ? tr("프레임 %1 저장 완료: %2").arg(cur_).arg(out)
                         : tr("PNG 저장 실패: %1").arg(out));
     return ok;
 }
 
-bool MainWindow::save_frame_native(const QString& meta_arg) {
+bool MainWindow::save_frame_native(const QString& path_arg) {
     if (busy() || count_ <= 0 || dec_next_ != cur_ + 1) return false;  // decoder must hold cur_
-    const NativeFrame nf = dec_.native_frame();
-    if (nf.planes.empty()) {
-        result_->setText(tr("이 픽셀 포맷은 원본 저장을 지원하지 않습니다: %1")
-                             .arg(QString::fromStdString(nf.info.pix_fmt)));
+    const cv::Mat rgb = dec_.precise_rgb();
+    if (rgb.empty()) {
+        show_result(tr("이 픽셀 포맷은 원본 저장을 지원하지 않습니다: %1")
+                             .arg(QString::fromStdString(pix_info_.pix_fmt)));
         return false;
     }
-    QString meta = meta_arg;
-    if (meta.isEmpty()) {
+    const bool deep = rgb.depth() == CV_16U;
+    QString out = path_arg;
+    if (out.isEmpty()) {
         const QFileInfo src(path_);
         const QString def = QDir(src.absolutePath())
-                                .filePath(QStringLiteral("%1_frame_%2_%3.txt")
+                                .filePath(QStringLiteral("%1_frame_%2_%3.png")
                                               .arg(src.completeBaseName())
                                               .arg(cur_)
-                                              .arg(QString::fromStdString(nf.info.pix_fmt)));
-        meta = QFileDialog::getSaveFileName(this, tr("원본 저장 (평면별 PNG + 설명 txt)"), def,
-                                            tr("원본 저장 (*.txt)"));
-        if (meta.isEmpty()) return false;
-        if (QFileInfo(meta).suffix().isEmpty()) meta += QStringLiteral(".txt");
+                                              .arg(deep ? QStringLiteral("16bit")
+                                                        : QStringLiteral("hq")));
+        out = QFileDialog::getSaveFileName(this, tr("원본 저장 (고품질 PNG)"), def, tr("PNG (*.png)"));
+        if (out.isEmpty()) return false;
+        if (QFileInfo(out).suffix().isEmpty()) out += QStringLiteral(".png");
     }
-    const QFileInfo mi(meta);
-    const QString stem = mi.dir().filePath(mi.completeBaseName());
-
-    QString text;
-    QTextStream ts(&text);
-    ts << "pix_fmt=" << QString::fromStdString(nf.info.pix_fmt) << "\n"
-       << "frame=" << cur_ << "\n"
-       << "width=" << cur_bgr_.cols << "\n"
-       << "height=" << cur_bgr_.rows << "\n"
-       << "bit_depth=" << nf.info.bit_depth << "\n"
-       << "color_range=" << QString::fromStdString(nf.info.color_range) << "\n"
-       << "colorspace=" << QString::fromStdString(nf.info.colorspace) << "\n"
-       << "# each plane: 8-bit gray PNG, or 16-bit gray PNG holding the raw (unshifted) sample\n";
-
-    bool ok = true;
-    for (size_t i = 0; ok && i < nf.planes.size(); ++i) {
-        const cv::Mat& m = nf.planes[i];
-        const QString file = QStringLiteral("%1_%2.png")
-                                 .arg(stem, QString::fromStdString(nf.plane_names[i]));
-        const QImage img(m.data, m.cols, m.rows, static_cast<qsizetype>(m.step[0]),
-                         nf.info.bit_depth > 8 ? QImage::Format_Grayscale16
-                                               : QImage::Format_Grayscale8);
-        ok = img.save(file, "PNG");
-        ts << "plane_" << QString::fromStdString(nf.plane_names[i]) << "=" << QFileInfo(file).fileName()
-           << " " << m.cols << "x" << m.rows << "\n";
-    }
-    if (ok) {
-        QFile f(meta);
-        ok = f.open(QIODevice::WriteOnly | QIODevice::Truncate) && f.write(text.toUtf8()) >= 0;
-    }
-    result_->setText(ok ? tr("프레임 %1 원본 저장 완료: %2_*.png").arg(cur_).arg(stem)
-                        : tr("원본 저장 실패: %1").arg(stem));
+    const QImage img(rgb.data, rgb.cols, rgb.rows, static_cast<qsizetype>(rgb.step[0]),
+                     deep ? QImage::Format_RGBX64 : QImage::Format_RGB888);
+    const bool ok = img.save(out, "PNG", 0);
+    show_result(ok ? tr("프레임 %1 원본 저장 완료 (%2bit): %3")
+                              .arg(cur_)
+                              .arg(deep ? 16 : 8)
+                              .arg(out)
+                        : tr("원본 저장 실패: %1").arg(out));
     return ok;
+}
+
+void MainWindow::show_result(const QString& text) {
+    result_->setText(text);
+    result_->setToolTip(text);
 }
 
 void MainWindow::update_format_ui() {
@@ -587,22 +572,23 @@ void MainWindow::update_format_ui() {
     QString rec;
     if (p.png_exact) {
         rec = tr("권장: PNG로 저장 (원본이 RGB 8bit라 손실 없음)");
-    } else if (p.planar_saveable) {
-        rec = tr("권장: 원본 저장 (PNG는 YUV→RGB 변환본이라 원본과 다름)");
     } else {
-        rec = tr("원본 저장 미지원 포맷 (PNG는 변환본)");
+        rec = tr("권장: 원본 저장 (정확한 색 변환%1)")
+                  .arg(p.bit_depth > 8 ? tr(" + 16bit PNG") : QString());
     }
     format_label_->setText(tr("픽셀 포맷: %1 · %2bit · %3 · %4  →  %5")
                                .arg(QString::fromStdString(p.pix_fmt))
                                .arg(p.bit_depth)
                                .arg(QString::fromStdString(p.color_range),
                                     QString::fromStdString(p.colorspace), rec));
-    emphasize(save_native_btn_, !p.png_exact && p.planar_saveable);
+    format_label_->setToolTip(format_label_->text());
+    emphasize(save_native_btn_, !p.png_exact);
     emphasize(save_png_btn_, p.png_exact);
     save_png_btn_->setToolTip(p.png_exact
                                   ? tr("원본 픽셀과 동일한 무손실 PNG")
-                                  : tr("RGB로 변환한 PNG. 파일은 무손실이지만 변환 과정에서 원본과 달라질 수 있음. 마스크 미포함"));
-    save_native_btn_->setToolTip(tr("디코더 출력 평면(Y/U/V 등)을 변환 없이 평면별 PNG + 설명 txt로 저장"));
+                                  : tr("화면 표시용 빠른 변환(8bit, 기본 색 행렬)을 그대로 저장한 PNG. 마스크 미포함"));
+    save_native_btn_->setToolTip(tr("원본 프레임에서 따로 변환한 컬러 PNG: 영상의 색 행렬/범위 반영, 정확한 반올림, "
+                                  "크로마 풀 보간, 10bit 이상이면 16bit PNG. 마스크 미포함"));
 }
 
 void MainWindow::on_export_done(const ExportResult& r, const QString& path) {
@@ -620,7 +606,7 @@ void MainWindow::on_export_done(const ExportResult& r, const QString& path) {
         msg = tr("추출 실패: %1").arg(QString::fromStdString(r.error));
         break;
     }
-    result_->setText(msg);
+    show_result(msg);
     update_enabled();
     emit exportFinished(r.status == ExportStatus::Ok, msg);
 }
@@ -635,7 +621,7 @@ void MainWindow::on_search_done(const LoopResult& r) {
         start_label_->setText(tr("S: %1").arg(start_));
         progress_->setValue(1000);
         timeline_->set_loop(r.range.start, r.range.end);
-        result_->setText(tr("반복 구간 [%1, %2] · %3프레임 · 유사도 %4%")
+        show_result(tr("반복 구간 [%1, %2] · %3프레임 · 유사도 %4%")
                              .arg(r.range.start)
                              .arg(r.range.end)
                              .arg(r.range.end - r.range.start + 1)
@@ -644,13 +630,13 @@ void MainWindow::on_search_done(const LoopResult& r) {
         break;
     case LoopStatus::NotFound:
         progress_->setValue(1000);
-        result_->setText(tr(loop_ ? "다음 구간 없음" : "반복 없음"));
+        show_result(tr(loop_ ? "다음 구간 없음" : "반복 없음"));
         break;
     case LoopStatus::Cancelled:
-        result_->setText(tr("취소됨"));
+        show_result(tr("취소됨"));
         break;
     case LoopStatus::Error:
-        result_->setText(tr("오류: 탐색 실패"));
+        show_result(tr("오류: 탐색 실패"));
         break;
     }
     update_enabled();
@@ -712,7 +698,7 @@ void MainWindow::update_enabled() {
     cancel_btn_->setEnabled(busy());
     export_btn_->setEnabled(loop_.has_value() && idle);
     save_png_btn_->setEnabled(loaded && idle);
-    save_native_btn_->setEnabled(loaded && idle && pix_info_.planar_saveable);
+    save_native_btn_->setEnabled(loaded && idle);
     play_btn_->setEnabled(loop_.has_value() && idle);
 }
 
