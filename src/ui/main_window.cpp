@@ -20,6 +20,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSplitter>
 #include <QShortcut>
 #include <QSlider>
 #include <QSpinBox>
@@ -31,6 +32,17 @@
 #include <cmath>
 
 namespace dfd {
+
+namespace {
+// mm:ss.mmm for a frame index (or a frame count, i.e. a duration) at the given fps.
+QString format_time(int frames, double fps) {
+    const qint64 ms = fps > 0 ? std::llround(frames * 1000.0 / fps) : 0;
+    return QStringLiteral("%1:%2.%3")
+        .arg(ms / 60000, 2, 10, QLatin1Char('0'))
+        .arg(ms / 1000 % 60, 2, 10, QLatin1Char('0'))
+        .arg(ms % 1000, 3, 10, QLatin1Char('0'));
+}
+}  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("dup_frame_detector");
@@ -53,8 +65,21 @@ void MainWindow::build_ui() {
     auto* central = new QWidget;
     auto* root = new QVBoxLayout(central);
 
+    // Left: original (plays straight through). Right: found loop only, repeating.
     view_ = new VideoView;
-    root->addWidget(view_, 1);
+    loop_view_ = new VideoView;
+    loop_view_->set_editable(false);
+    loop_view_->set_in_loop(true);
+    loop_view_->hide();  // shown once a loop is found
+    view_->set_caption(tr("원본"), QColor(40, 90, 200, 220));
+    loop_view_->set_caption(tr("반복 구간"), QColor(255, 170, 0, 230));
+    split_ = new QSplitter(Qt::Horizontal);
+    split_->setChildrenCollapsible(false);
+    split_->addWidget(view_);
+    split_->addWidget(loop_view_);
+    split_->setStretchFactor(0, 1);
+    split_->setStretchFactor(1, 1);
+    root->addWidget(split_, 1);
 
     timeline_ = new Timeline;
     root->addWidget(timeline_);
@@ -328,6 +353,10 @@ bool MainWindow::open_video(const QString& path) {
     cur_ = 0;
     start_ = -1;
     loop_.reset();
+    loop_view_->hide();
+    loop_view_->clear_frame();
+    loop_cur_ = -1;
+    loop_dec_next_ = -1;
     timeline_->set_frame_count(count_);
     start_label_->setText(tr("S: 없음"));
     show_result({});
@@ -367,6 +396,22 @@ void MainWindow::show_frame(int index) {
     update_info();
 }
 
+void MainWindow::show_loop_frame(int index) {
+    if (!loop_) return;
+    if (index != loop_dec_next_ && !loop_dec_.seek(index)) {
+        loop_dec_next_ = -1;
+        return;
+    }
+    const cv::Mat f = loop_dec_.next();
+    if (f.empty()) {
+        loop_dec_next_ = -1;
+        return;
+    }
+    loop_dec_next_ = index + 1;
+    loop_cur_ = index;
+    loop_view_->set_frame(f);
+}
+
 void MainWindow::scrub(int frame) {
     if (count_ <= 0) return;
     set_playing(false);
@@ -386,6 +431,9 @@ void MainWindow::invalidate_loop() {
     if (!loop_) return;
     set_playing(false);
     loop_.reset();
+    loop_view_->hide();
+    loop_view_->clear_frame();
+    loop_cur_ = -1;
     timeline_->clear_loop();
     view_->set_in_loop(false);
     show_result({});
@@ -621,12 +669,24 @@ void MainWindow::on_search_done(const LoopResult& r) {
         start_label_->setText(tr("S: %1").arg(start_));
         progress_->setValue(1000);
         timeline_->set_loop(r.range.start, r.range.end);
-        show_result(tr("반복 구간 [%1, %2] · %3프레임 · 유사도 %4%")
+        show_result(tr("반복 구간 [%1, %2] · %3프레임 · 길이 %4 · 유사도 %5%")
                              .arg(r.range.start)
                              .arg(r.range.end)
                              .arg(r.range.end - r.range.start + 1)
+                             .arg(format_time(r.range.end - r.range.start + 1, dec_.fps()))
                              .arg(r.similarity * 100, 0, 'f', 2));
         show_frame(r.range.start);
+        loop_dec_next_ = -1;
+        if (loop_dec_.open(path_.toStdString())) {
+            loop_view_->set_caption(tr("반복 구간 [%1, %2] · %3")
+                                        .arg(r.range.start)
+                                        .arg(r.range.end)
+                                        .arg(format_time(r.range.end - r.range.start + 1, dec_.fps())),
+                                    QColor(255, 170, 0, 230));
+            loop_view_->show();
+            split_->setSizes({1, 1});  // equal halves so both pictures have the same size
+            show_loop_frame(r.range.start);
+        }
         break;
     case LoopStatus::NotFound:
         progress_->setValue(1000);
@@ -651,13 +711,17 @@ void MainWindow::set_playing(bool playing) {
         return;
     }
     if (cur_ < loop_->start || cur_ > loop_->end) show_frame(loop_->start);
+    show_loop_frame(cur_);  // cur_ is inside the loop: start both views in phase
     const double fps = dec_.fps() > 0 ? dec_.fps() : 30.0;
     play_timer_.start(std::max(1, static_cast<int>(std::lround(1000.0 / fps))));
 }
 
 void MainWindow::tick() {
     if (!loop_) return set_playing(false);
-    show_frame(cur_ >= loop_->end ? loop_->start : cur_ + 1);
+    // The original runs on past E (restarting at S after the last frame);
+    // the loop view cycles [S, E] on the same clock.
+    show_frame(cur_ >= count_ - 1 ? loop_->start : cur_ + 1);
+    show_loop_frame(loop_cur_ >= loop_->end ? loop_->start : loop_cur_ + 1);
 }
 
 void MainWindow::update_info() {
@@ -668,13 +732,7 @@ void MainWindow::update_info() {
         return;
     }
     const double fps = dec_.fps();
-    const auto fmt = [fps](int frame) {
-        const qint64 ms = fps > 0 ? std::llround(frame * 1000.0 / fps) : 0;
-        return QStringLiteral("%1:%2.%3")
-            .arg(ms / 60000, 2, 10, QLatin1Char('0'))
-            .arg(ms / 1000 % 60, 2, 10, QLatin1Char('0'))
-            .arg(ms % 1000, 3, 10, QLatin1Char('0'));
-    };
+    const auto fmt = [fps](int frame) { return format_time(frame, fps); };
     info_->setText(QStringLiteral("%1 / %2   %3 / %4")
                        .arg(cur_)
                        .arg(count_ - 1)

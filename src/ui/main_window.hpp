@@ -16,6 +16,7 @@ class QProgressBar;
 class QPushButton;
 class QLineEdit;
 class QSlider;
+class QSplitter;
 class QSpinBox;
 class QToolButton;
 
@@ -53,6 +54,7 @@ public:
     void set_playing(bool playing);
 
     int current_frame() const { return cur_; }
+    int loop_frame() const { return loop_cur_; }  // frame shown in the right-hand loop view
     int start_frame() const { return start_; }
     std::optional<LoopRange> loop() const { return loop_; }
     bool searching() const { return searching_; }
@@ -63,6 +65,7 @@ public:
     double threshold() const;
     void set_threshold(double t);  // [0, 1]
     VideoView* view() const { return view_; }
+    VideoView* loop_view() const { return loop_view_; }
     Timeline* timeline() const { return timeline_; }
 
 signals:
@@ -73,6 +76,7 @@ private:
     void build_ui();
     void scrub(int frame);
     void show_help();
+    void show_loop_frame(int index);
     void invalidate_loop();
     void run_search(std::optional<LoopRange> prev);
     void on_search_done(const LoopResult& r);
@@ -86,6 +90,9 @@ private:
     void tick();
 
     Decoder dec_;
+    Decoder loop_dec_;      // feeds the loop view; independent of dec_ so both play at once
+    int loop_dec_next_ = -1;
+    int loop_cur_ = -1;
     QString path_;
     int count_ = 0;
     int cur_ = 0;
@@ -98,6 +105,8 @@ private:
     bool exporting_ = false;
 
     VideoView* view_ = nullptr;
+    VideoView* loop_view_ = nullptr;
+    QSplitter* split_ = nullptr;
     Timeline* timeline_ = nullptr;
     QSpinBox* frame_spin_ = nullptr;
     QLabel* info_ = nullptr;

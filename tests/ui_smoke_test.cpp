@@ -99,23 +99,27 @@ int main(int argc, char** argv) {
         QFile::remove(out);
     }
 
-    // loop playback wraps inside [10, 39]
+    // loop playback: right view wraps inside [10, 39] while the original runs straight on
+    CHECK(w.loop_view()->isVisible() && w.loop_frame() == 10);
     w.set_playing(true);
     CHECK(w.playing());
     int max_seen = 0, min_seen = 1 << 30;
     bool wrapped = false;
     QElapsedTimer t;
     t.start();
-    int prev = w.current_frame();
+    int orig_max = 0;
+    int prev = w.loop_frame();
     while (t.elapsed() < 1800) {
         QTest::qWait(10);
-        const int c = w.current_frame();
+        const int c = w.loop_frame();
         max_seen = std::max(max_seen, c);
         min_seen = std::min(min_seen, c);
+        orig_max = std::max(orig_max, w.current_frame());
         if (c < prev) wrapped = true;
         prev = c;
     }
     CHECK(min_seen >= 10 && max_seen <= 39 && wrapped);
+    CHECK(orig_max > 39);  // original keeps playing past E
     w.timeline()->frameRequested(50);  // user scrub stops playback
     CHECK(!w.playing() && w.current_frame() == 50);
 

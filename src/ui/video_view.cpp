@@ -47,12 +47,23 @@ void VideoView::set_in_loop(bool in_loop) {
     update();
 }
 
+void VideoView::set_caption(const QString& text, QColor color) {
+    caption_ = text;
+    caption_color_ = color;
+    update();
+}
+
 void VideoView::set_brush_radius(int r) {
     radius_ = std::max(1, r);
     update();
 }
 
 void VideoView::set_eraser(bool eraser) { eraser_ = eraser; }
+
+void VideoView::set_editable(bool editable) {
+    editable_ = editable;
+    setMouseTracking(editable);
+}
 
 void VideoView::reset_mask(cv::Size size) {
     mask_ = cv::Mat::zeros(size, CV_8UC1);
@@ -127,6 +138,19 @@ void VideoView::paintEvent(QPaintEvent*) {
         p.setBrush(Qt::NoBrush);
         p.drawRect(r.adjusted(2, 2, -2, -2));
     }
+    if (!caption_.isEmpty()) {
+        QFont f = p.font();
+        f.setBold(true);
+        f.setPointSizeF(f.pointSizeF() * 1.2);
+        p.setFont(f);
+        const QRectF text = QFontMetricsF(f).boundingRect(caption_);
+        const QRectF badge(r.left() + 8, r.top() + 8, text.width() + 20, text.height() + 8);
+        p.setPen(Qt::NoPen);
+        p.setBrush(caption_color_);
+        p.drawRoundedRect(badge, 4, 4);
+        p.setPen(caption_color_.lightness() > 128 ? Qt::black : Qt::white);
+        p.drawText(badge, Qt::AlignCenter, caption_);
+    }
     if (hovering_ && r.contains(hover_)) {
         const double rad = radius_ * r.width() / frame_.width();
         p.setRenderHint(QPainter::Antialiasing);
@@ -139,7 +163,7 @@ void VideoView::paintEvent(QPaintEvent*) {
 }
 
 void VideoView::mousePressEvent(QMouseEvent* e) {
-    if (e->button() != Qt::LeftButton || frame_.isNull()) return;
+    if (!editable_ || e->button() != Qt::LeftButton || frame_.isNull()) return;
     drawing_ = true;
     changed_in_stroke_ = false;
     last_ = to_image(e->position()).toPoint();
@@ -148,6 +172,7 @@ void VideoView::mousePressEvent(QMouseEvent* e) {
 }
 
 void VideoView::mouseMoveEvent(QMouseEvent* e) {
+    if (!editable_) return;
     hover_ = e->position();
     hovering_ = true;
     if (drawing_) {

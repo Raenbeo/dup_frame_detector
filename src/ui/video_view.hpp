@@ -2,6 +2,7 @@
 
 #include <opencv2/core.hpp>
 
+#include <QColor>
 #include <QImage>
 #include <QString>
 #include <QPointF>
@@ -23,9 +24,13 @@ public:
 
     // Highlight border: current frame lies inside the found loop.
     void set_in_loop(bool in_loop);
+    // Label badge drawn in the top-left corner of the picture. Empty -> none.
+    void set_caption(const QString& text, QColor color = QColor(40, 40, 40, 200));
 
     void set_brush_radius(int radius_px);  // in video pixels
     void set_eraser(bool eraser);
+    // Display-only views ignore the mouse (no mask painting, no brush cursor).
+    void set_editable(bool editable);
     int brush_radius() const { return radius_; }
     bool eraser() const { return eraser_; }
 
@@ -57,10 +62,13 @@ private:
 
     QImage frame_;
     QString message_;
+    QString caption_;
+    QColor caption_color_;
     QImage overlay_;  // ARGB32_Premultiplied, mirrors mask_
     cv::Mat mask_;    // CV_8UC1, 255 = excluded
     int radius_ = 20;
     bool eraser_ = false;
+    bool editable_ = true;
     bool in_loop_ = false;
     bool drawing_ = false;
     bool changed_in_stroke_ = false;
