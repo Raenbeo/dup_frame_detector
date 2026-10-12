@@ -38,7 +38,7 @@
 | `Shift+W` | 5프레임 앞으로 |
 | `Shift+B` | 5프레임 뒤로 |
 | `Space` | 구간 반복 재생 / 정지 (루프를 찾은 뒤) |
-| `O` | 겹쳐 보기 켜기/끄기 (루프를 찾은 뒤) |
+| `O` / `Tab` | 겹쳐 보기 켜기/끄기 (루프를 찾은 뒤) |
 | `F1` | 도움말 |
 
 타임라인은 클릭/드래그로 프레임 이동, 마스크는 왼쪽 마우스 버튼으로 칠합니다.
@@ -120,7 +120,7 @@ The loop is **`[S, E-1]`** (`E` is the start of the next repetition, so it is ex
 | `Shift+W` | Forward 5 frames |
 | `Shift+B` | Back 5 frames |
 | `Space` | Play / stop the loop (after a loop is found) |
-| `O` | Toggle overlay (after a loop is found) |
+| `O` / `Tab` | Toggle overlay (after a loop is found) |
 | `F1` | Help |
 
 Click or drag on the timeline to seek; paint the mask with the left mouse button.

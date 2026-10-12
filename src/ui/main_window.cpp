@@ -296,10 +296,12 @@ void MainWindow::build_ui() {
     connect(tint_btn_, &QPushButton::clicked, this, &MainWindow::cycle_tint);
     connect(overlay_slider_, &QSlider::valueChanged, this,
             [this](int v) { view_->set_blend_opacity(v / 100.0); });
-    auto* overlay_key = new QShortcut(QKeySequence(Qt::Key_O), this);
-    connect(overlay_key, &QShortcut::activated, this, [this] {
-        if (loop_) set_overlay(!overlay());
-    });
+    for (const Qt::Key key : {Qt::Key_O, Qt::Key_Tab}) {
+        auto* overlay_key = new QShortcut(QKeySequence(key), this);
+        connect(overlay_key, &QShortcut::activated, this, [this] {
+            if (loop_) set_overlay(!overlay());
+        });
+    }
     connect(language_btn_, &QPushButton::clicked, this, [] {
         i18n::set_language(i18n::language() == i18n::Lang::English ? i18n::Lang::Korean
                                                                    : i18n::Lang::English);
@@ -358,7 +360,7 @@ void MainWindow::show_help() {
     add("<tr><td><b>Shift+W</b></td><td>5프레임 앞으로</td></tr>");
     add("<tr><td><b>Shift+B</b></td><td>5프레임 뒤로</td></tr>");
     add("<tr><td><b>Space</b></td><td>구간 반복 재생 / 정지</td></tr>");
-    add("<tr><td><b>O</b></td><td>겹쳐 보기 켜기/끄기</td></tr>");
+    add("<tr><td><b>O</b> / <b>Tab</b></td><td>겹쳐 보기 켜기/끄기</td></tr>");
     add("<tr><td><b>F1</b></td><td>도움말</td></tr>");
     add("</table>");
     box.setText(html);
