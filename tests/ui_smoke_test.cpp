@@ -1,11 +1,15 @@
 // usage: ui_smoke_test <loop_video> [screenshot.png]
 // loop_video: 90 frames = a 30-frame clip repeated 3 times (see loop_test).
 // Run with QT_QPA_PLATFORM=offscreen.
+#include "ui/i18n.hpp"
 #include "ui/main_window.hpp"
 #include "ui/timeline.hpp"
 #include "ui/video_view.hpp"
 
+#include <QAbstractButton>
 #include <QApplication>
+#include <QLabel>
+#include <QPushButton>
 #include <QElapsedTimer>
 #include <QDir>
 #include <QEventLoop>
@@ -105,6 +109,38 @@ int main(int argc, char** argv) {
     CHECK(w.overlay() && !w.loop_view()->isVisible());
     w.set_overlay(false);
     CHECK(!w.overlay() && w.loop_view()->isVisible());
+
+    // language switch: every label/button/tooltip loses its Korean text, and Korean comes back
+    {
+        const auto hangul = [](const QString& t) {
+            for (QChar c : t) if (c.unicode() >= 0xAC00 && c.unicode() <= 0xD7A3) return true;
+            return false;
+        };
+        const auto untranslated = [&] {
+            int n = 0;
+            for (QWidget* c : w.findChildren<QWidget*>()) {
+                QString text;
+                if (auto* b = qobject_cast<QAbstractButton*>(c)) text = b->text();
+                else if (auto* l = qobject_cast<QLabel*>(c)) text = l->text();
+                if (hangul(text) || hangul(c->toolTip())) {
+                    if (c->objectName() == "language") continue;
+                    std::printf("untranslated: %s | %s\n", qPrintable(text), qPrintable(c->toolTip()));
+                    ++n;
+                }
+            }
+            return n;
+        };
+        CHECK(w.tr("원본") == "원본");
+        dfd::i18n::set_language(dfd::i18n::Lang::English, /*persist=*/false);
+        QCoreApplication::sendPostedEvents();  // LanguageChange is posted
+        CHECK(w.tr("원본") == "Original");
+        CHECK(w.findChild<QPushButton*>("language") && w.findChild<QPushButton*>("language")->text() == "한국어");
+        CHECK(untranslated() == 0);
+        dfd::i18n::set_language(dfd::i18n::Lang::Korean, /*persist=*/false);
+        QCoreApplication::sendPostedEvents();
+        CHECK(w.findChild<QPushButton*>("language")->text() == "English");
+        CHECK(w.tr("원본") == "원본");
+    }
     w.set_playing(true);
     CHECK(w.playing());
     int max_seen = 0, min_seen = 1 << 30;

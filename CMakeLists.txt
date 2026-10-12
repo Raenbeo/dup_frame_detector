@@ -29,6 +29,8 @@ add_library(ui STATIC
     src/ui/main_window.hpp
     src/ui/video_view.cpp
     src/ui/video_view.hpp
+    src/ui/i18n.cpp
+    src/ui/i18n.hpp
     src/ui/timeline.cpp
     src/ui/timeline.hpp)
 target_include_directories(ui PUBLIC src)

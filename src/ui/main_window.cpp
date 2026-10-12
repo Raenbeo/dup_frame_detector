@@ -1,5 +1,6 @@
 #include "ui/main_window.hpp"
 
+#include "ui/i18n.hpp"
 #include "ui/timeline.hpp"
 #include "ui/video_view.hpp"
 
@@ -10,6 +11,7 @@
 #include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QEvent>
 #include <QMimeData>
 #include <QHBoxLayout>
 #include <QImage>
@@ -62,6 +64,17 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::build_ui() {
+    // Static texts are registered so a language switch can re-apply them (retranslate_ui).
+    auto text = [this](auto* w, const char* src) {
+        w->setText(tr(src));
+        retranslators_.push_back([this, w, src] { w->setText(tr(src)); });
+        return w;
+    };
+    auto tip = [this](QWidget* w, const char* src) {
+        w->setToolTip(tr(src));
+        retranslators_.push_back([this, w, src] { w->setToolTip(tr(src)); });
+    };
+
     auto* central = new QWidget;
     auto* root = new QVBoxLayout(central);
 
@@ -71,8 +84,6 @@ void MainWindow::build_ui() {
     loop_view_->set_editable(false);
     loop_view_->set_in_loop(true);
     loop_view_->hide();  // shown once a loop is found
-    view_->set_caption(tr("원본"), QColor(40, 90, 200, 220));
-    loop_view_->set_caption(tr("반복 구간"), QColor(255, 170, 0, 230));
     split_ = new QSplitter(Qt::Horizontal);
     split_->setChildrenCollapsible(false);
     split_->addWidget(view_);
@@ -86,18 +97,19 @@ void MainWindow::build_ui() {
 
     // frame / S row
     auto* row1 = new QHBoxLayout;
-    open_btn_ = new QPushButton(tr("열기..."));
+    open_btn_ = text(new QPushButton, "열기...");
     path_edit_ = new QLineEdit;
     path_edit_->setPlaceholderText(tr("파일 경로 (비어 있으면 탐색기)"));
+    retranslators_.push_back([this] { path_edit_->setPlaceholderText(tr("파일 경로 (비어 있으면 탐색기)")); });
     path_edit_->setMinimumWidth(240);
     frame_spin_ = new QSpinBox;
     frame_spin_->setEnabled(false);
     info_ = new QLabel;
-    set_start_btn_ = new QPushButton(tr("현재 프레임을 S로"));
-    start_label_ = new QLabel(tr("S: 없음"));
+    set_start_btn_ = text(new QPushButton, "현재 프레임을 S로");
+    start_label_ = new QLabel;  // text set by update_start_label()
     row1->addWidget(open_btn_);
     row1->addWidget(path_edit_);
-    row1->addWidget(new QLabel(tr("프레임")));
+    row1->addWidget(text(new QLabel, "프레임"));
     row1->addWidget(frame_spin_);
     row1->addWidget(info_, 1);
     row1->addWidget(set_start_btn_);
@@ -107,16 +119,23 @@ void MainWindow::build_ui() {
     // threshold + brush row
     auto* row2 = new QHBoxLayout;
     metric_combo_ = new QComboBox;
-    metric_combo_->addItem(tr("픽셀 차이 (MAE)"), static_cast<int>(Metric::Mae));
-    metric_combo_->setItemData(0, tr("픽셀 값이 거의 같아야 일치. 무손실/고화질 영상에 적합"),
-                               Qt::ToolTipRole);
-    metric_combo_->addItem(tr("구조 (SSIM)"), static_cast<int>(Metric::Ssim));
-    metric_combo_->setItemData(1, tr("모양·윤곽 기준. 압축 노이즈, 블러가 있는 영상에 적합"),
-                               Qt::ToolTipRole);
-    metric_combo_->addItem(tr("밝기 무관 (NCC)"), static_cast<int>(Metric::Ncc));
-    metric_combo_->setItemData(2, tr("밝기·대비 변화 무시. 페이드, 자동 노출 변화가 있는 영상에 적합"),
-                               Qt::ToolTipRole);
-    row2->addWidget(new QLabel(tr("비교 방식")));
+    metric_combo_->addItem({}, static_cast<int>(Metric::Mae));
+    metric_combo_->addItem({}, static_cast<int>(Metric::Ssim));
+    metric_combo_->addItem({}, static_cast<int>(Metric::Ncc));
+    const auto metric_texts = [this] {
+        metric_combo_->setItemText(0, tr("픽셀 차이 (MAE)"));
+        metric_combo_->setItemData(0, tr("픽셀 값이 거의 같아야 일치. 무손실/고화질 영상에 적합"),
+                                   Qt::ToolTipRole);
+        metric_combo_->setItemText(1, tr("구조 (SSIM)"));
+        metric_combo_->setItemData(1, tr("모양·윤곽 기준. 압축 노이즈, 블러가 있는 영상에 적합"),
+                                   Qt::ToolTipRole);
+        metric_combo_->setItemText(2, tr("밝기 무관 (NCC)"));
+        metric_combo_->setItemData(2, tr("밝기·대비 변화 무시. 페이드, 자동 노출 변화가 있는 영상에 적합"),
+                                   Qt::ToolTipRole);
+    };
+    metric_texts();
+    retranslators_.push_back(metric_texts);
+    row2->addWidget(text(new QLabel, "비교 방식"));
     row2->addWidget(metric_combo_);
     row2->addSpacing(12);
     threshold_slider_ = new QSlider(Qt::Horizontal);
@@ -124,27 +143,27 @@ void MainWindow::build_ui() {
     threshold_slider_->setValue(995);
     threshold_slider_->setMinimumWidth(200);
     threshold_label_ = new QLabel;
-    row2->addWidget(new QLabel(tr("일치도")));
+    row2->addWidget(text(new QLabel, "일치도"));
     row2->addWidget(threshold_slider_);
     row2->addWidget(threshold_label_);
     row2->addSpacing(24);
 
     brush_btn_ = new QToolButton;
-    brush_btn_->setText(tr("브러시"));
+    text(brush_btn_, "브러시");
     brush_btn_->setCheckable(true);
     brush_btn_->setChecked(true);
     eraser_btn_ = new QToolButton;
-    eraser_btn_->setText(tr("지우개"));
+    text(eraser_btn_, "지우개");
     eraser_btn_->setCheckable(true);
     brush_slider_ = new QSlider(Qt::Horizontal);
     brush_slider_->setRange(1, 200);
     brush_slider_->setValue(view_->brush_radius());
     brush_slider_->setMinimumWidth(120);
     brush_label_ = new QLabel;
-    clear_mask_btn_ = new QPushButton(tr("마스크 지우기"));
+    clear_mask_btn_ = text(new QPushButton, "마스크 지우기");
     row2->addWidget(brush_btn_);
     row2->addWidget(eraser_btn_);
-    row2->addWidget(new QLabel(tr("크기")));
+    row2->addWidget(text(new QLabel, "크기"));
     row2->addWidget(brush_slider_);
     row2->addWidget(brush_label_);
     row2->addWidget(clear_mask_btn_);
@@ -153,17 +172,17 @@ void MainWindow::build_ui() {
 
     // search row
     auto* row3 = new QHBoxLayout;
-    search_btn_ = new QPushButton(tr("탐색"));
-    next_btn_ = new QPushButton(tr("E 이후 S 일치 찾기"));
-    next_btn_->setToolTip(tr("S는 그대로 두고, 현재 끝(E) 다음 프레임부터 S와 일치하는 프레임을 찾아 구간 끝을 늘림"));
-    cancel_btn_ = new QPushButton(tr("취소"));
+    search_btn_ = text(new QPushButton, "탐색");
+    next_btn_ = text(new QPushButton, "E 이후 S 일치 찾기");
+    tip(next_btn_, "S는 그대로 두고, 현재 끝(E) 다음 프레임부터 S와 일치하는 프레임을 찾아 구간 끝을 늘림");
+    cancel_btn_ = text(new QPushButton, "취소");
     progress_ = new QProgressBar;
     progress_->setRange(0, 1000);
     progress_->setTextVisible(true);
     result_ = new QLabel;
     // Long messages (file paths) must not grow the window and resize the video view.
     result_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    play_btn_ = new QPushButton(tr("구간 반복 재생"));
+    play_btn_ = text(new QPushButton, "구간 반복 재생");
     play_btn_->setCheckable(true);
     row3->addWidget(search_btn_);
     row3->addWidget(next_btn_);
@@ -171,8 +190,8 @@ void MainWindow::build_ui() {
     row3->addWidget(progress_, 1);
     row3->addWidget(result_, 2);
     row3->addWidget(play_btn_);
-    export_btn_ = new QPushButton(tr("구간 추출 (무손실)"));
-    export_btn_->setToolTip(tr("FFV1 / MKV · 원본 픽셀 포맷 그대로 · 디코드 결과가 원본과 비트 단위로 동일"));
+    export_btn_ = text(new QPushButton, "구간 추출 (무손실)");
+    tip(export_btn_, "FFV1 / MKV · 원본 픽셀 포맷 그대로 · 디코드 결과가 원본과 비트 단위로 동일");
     row3->addWidget(export_btn_);
     root->addLayout(row3);
 
@@ -180,31 +199,36 @@ void MainWindow::build_ui() {
     auto* row4 = new QHBoxLayout;
     format_label_ = new QLabel;
     format_label_->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    save_native_btn_ = new QPushButton(tr("원본 저장 (고품질 PNG)"));
-    save_png_btn_ = new QPushButton(tr("PNG로 저장"));
-    overlay_btn_ = new QPushButton(tr("겹쳐 보기"));
+    save_native_btn_ = text(new QPushButton, "원본 저장 (고품질 PNG)");
+    save_png_btn_ = text(new QPushButton, "PNG로 저장");
+    overlay_btn_ = text(new QPushButton, "겹쳐 보기");
     overlay_btn_->setCheckable(true);
-    overlay_btn_->setToolTip(tr("원본 위에 반복 구간 화면을 반투명으로 겹쳐 표시 (O)"));
+    tip(overlay_btn_, "원본 위에 반복 구간 화면을 반투명으로 겹쳐 표시 (O)");
     overlay_slider_ = new QSlider(Qt::Horizontal);
     overlay_slider_->setRange(0, 100);
     overlay_slider_->setValue(50);
     overlay_slider_->setFixedWidth(120);
-    overlay_slider_->setToolTip(tr("겹친 화면의 불투명도"));
+    tip(overlay_slider_, "겹친 화면의 불투명도");
     row4->addWidget(overlay_btn_);
-    tint_btn_ = new QPushButton(tr("색상 필터: 없음"));
-    tint_btn_->setToolTip(tr("겹친 화면에 색상 필터 적용 (누를 때마다 없음 → 빨강 → 초록 → 파랑 → 시안). "
-                             "원본과 다른 색으로 겹쳐 차이를 구분"));
+    tint_btn_ = new QPushButton;  // text set by update_tint_text()
+    tip(tint_btn_, "겹친 화면에 색상 필터 적용 (누를 때마다 없음 → 빨강 → 초록 → 파랑 → 시안). "
+                   "원본과 다른 색으로 겹쳐 차이를 구분");
     row4->addWidget(overlay_slider_);
     row4->addWidget(tint_btn_);
     row4->addWidget(format_label_, 1);
     row4->addWidget(save_native_btn_);
     row4->addWidget(save_png_btn_);
-    help_btn_ = new QPushButton(tr("도움말"));
-    help_btn_->setToolTip(tr("사용법과 단축키 (F1)"));
+    language_btn_ = new QPushButton;
+    language_btn_->setObjectName("language");  // text set by retranslate_ui(): shows the language to switch to
+    language_btn_->setToolTip(QStringLiteral("English / 한국어"));
+    row4->addWidget(language_btn_);
+    help_btn_ = text(new QPushButton, "도움말");
+    tip(help_btn_, "사용법과 단축키 (F1)");
     row4->addWidget(help_btn_);
     root->addLayout(row4);
 
     setCentralWidget(central);
+    retranslate_ui();
 
     connect(open_btn_, &QPushButton::clicked, this, [this] {
         const QString typed = path_edit_->text().trimmed();
@@ -276,6 +300,10 @@ void MainWindow::build_ui() {
     connect(overlay_key, &QShortcut::activated, this, [this] {
         if (loop_) set_overlay(!overlay());
     });
+    connect(language_btn_, &QPushButton::clicked, this, [] {
+        i18n::set_language(i18n::language() == i18n::Lang::English ? i18n::Lang::Korean
+                                                                   : i18n::Lang::English);
+    });
     connect(help_btn_, &QPushButton::clicked, this, &MainWindow::show_help);
     auto* help = new QShortcut(QKeySequence(Qt::Key_F1), this);
     connect(help, &QShortcut::activated, this, &MainWindow::show_help);
@@ -289,49 +317,51 @@ void MainWindow::show_help() {
     QMessageBox box(this);
     box.setWindowTitle(tr("도움말"));
     box.setTextFormat(Qt::RichText);
-    box.setText(tr(
-        "<h3>반복 구간 찾기</h3>"
-        "<p>기준 프레임 <b>S</b>를 고르면 S+1부터 차례로 비교해서 S와 같은 프레임 <b>E</b>를 찾습니다. "
-        "반복 구간은 <b>[S, E-1]</b>입니다.</p>"
-        "<h4>사용 순서</h4>"
-        "<ol>"
-        "<li><b>열기...</b>로 영상을 엽니다. 경로 칸에 직접 입력하거나 파일을 창에 끌어다 놓아도 됩니다.</li>"
-        "<li>타임라인을 클릭하거나 프레임 칸/단축키로 원하는 프레임에 이동한 뒤 <b>현재 프레임을 S로</b>를 누릅니다.</li>"
-        "<li>자막, 시계처럼 바뀌는 부분은 화면에 <b>브러시</b>로 칠해 비교에서 뺍니다. "
-        "<b>지우개</b>로 일부만 지우거나 <b>마스크 지우기</b>로 전부 지웁니다. 마스크를 고치면 이전 결과는 사라집니다.</li>"
-        "<li><b>비교 방식</b>과 <b>일치도</b>를 고른 뒤 <b>탐색</b>을 누릅니다.</li>"
-        "<li>찾으면 타임라인에 구간이 표시되고, 화면이 왼쪽 <b>원본</b>과 오른쪽 <b>반복 구간</b>으로 나뉩니다. "
-        "탐색 중에는 <b>취소</b>할 수 있고, 끝까지 없으면 \"반복 없음\"이 표시됩니다.</li>"
-        "</ol>"
-        "<h4>결과 활용</h4>"
-        "<ul>"
-        "<li><b>구간 반복 재생</b>: 원본은 계속 재생되고, 오른쪽 화면은 [S, E-1]만 반복합니다.</li>"
-        "<li><b>겹쳐 보기</b>: 원본 위에 반복 구간 화면을 반투명으로 겹쳐 두 화면의 차이를 확인합니다. "
+    QString html;
+    const auto add = [&](const char* fragment) { html += tr(fragment); };
+    add("<h3>반복 구간 찾기</h3>");
+    add("<p>기준 프레임 <b>S</b>를 고르면 S+1부터 차례로 비교해서 S와 같은 프레임 <b>E</b>를 찾습니다. "
+        "반복 구간은 <b>[S, E-1]</b>입니다.</p>");
+    add("<h4>사용 순서</h4>");
+    add("<ol>");
+    add("<li><b>열기...</b>로 영상을 엽니다. 경로 칸에 직접 입력하거나 파일을 창에 끌어다 놓아도 됩니다.</li>");
+    add("<li>타임라인을 클릭하거나 프레임 칸/단축키로 원하는 프레임에 이동한 뒤 <b>현재 프레임을 S로</b>를 누릅니다.</li>");
+    add("<li>자막, 시계처럼 바뀌는 부분은 화면에 <b>브러시</b>로 칠해 비교에서 뺍니다. "
+        "<b>지우개</b>로 일부만 지우거나 <b>마스크 지우기</b>로 전부 지웁니다. 마스크를 고치면 이전 결과는 사라집니다.</li>");
+    add("<li><b>비교 방식</b>과 <b>일치도</b>를 고른 뒤 <b>탐색</b>을 누릅니다.</li>");
+    add("<li>찾으면 타임라인에 구간이 표시되고, 화면이 왼쪽 <b>원본</b>과 오른쪽 <b>반복 구간</b>으로 나뉩니다. "
+        "탐색 중에는 <b>취소</b>할 수 있고, 끝까지 없으면 \"반복 없음\"이 표시됩니다.</li>");
+    add("</ol>");
+    add("<h4>결과 활용</h4>");
+    add("<ul>");
+    add("<li><b>구간 반복 재생</b>: 원본은 계속 재생되고, 오른쪽 화면은 [S, E-1]만 반복합니다.</li>");
+    add("<li><b>겹쳐 보기</b>: 원본 위에 반복 구간 화면을 반투명으로 겹쳐 두 화면의 차이를 확인합니다. "
         "옆 슬라이더로 불투명도를, <b>색상 필터</b> 버튼으로 겹친 화면의 색(빨강/초록/파랑/시안)을 바꿉니다. "
-        "다시 누르면 좌우 분할로 돌아갑니다.</li>"
-        "<li><b>E 이후 S 일치 찾기</b>: S는 그대로 두고 E 다음 프레임부터 S와 일치하는 프레임을 더 찾아 구간 끝을 늘립니다.</li>"
-        "<li><b>구간 추출 (무손실)</b>: 찾은 구간을 FFV1/MKV로 저장합니다.</li>"
-        "<li><b>PNG로 저장</b> / <b>원본 저장 (고품질 PNG)</b>: 현재 프레임을 저장합니다. "
-        "고품질 쪽은 영상의 색 행렬/범위와 10비트 이상 색심도를 반영합니다.</li>"
-        "</ul>"
-        "<h4>비교 방식</h4>"
-        "<ul>"
-        "<li><b>MAE</b>: 픽셀 값 차이. 무손실/고화질 영상</li>"
-        "<li><b>SSIM</b>: 구조 기준. 압축 노이즈, 블러가 있는 영상</li>"
-        "<li><b>NCC</b>: 밝기·대비 변화 무시. 페이드, 자동 노출</li>"
-        "</ul>"
-        "<p>방식을 바꾸면 일치도가 그 방식의 기본값으로 돌아갑니다. "
-        "못 찾으면 일치도를 낮추고, 엉뚱한 곳에서 멈추면 높이세요.</p>"
-        "<h4>단축키</h4>"
-        "<table cellpadding='2'>"
-        "<tr><td><b>W</b> / <b>→</b></td><td>다음 프레임</td></tr>"
-        "<tr><td><b>B</b> / <b>←</b></td><td>이전 프레임</td></tr>"
-                "<tr><td><b>Shift+W</b></td><td>5프레임 앞으로</td></tr>"
-        "<tr><td><b>Shift+B</b></td><td>5프레임 뒤로</td></tr>"
-        "<tr><td><b>Space</b></td><td>구간 반복 재생 / 정지</td></tr>"
-        "<tr><td><b>O</b></td><td>겹쳐 보기 켜기/끄기</td></tr>"
-        "<tr><td><b>F1</b></td><td>도움말</td></tr>"
-        "</table>"));
+        "다시 누르면 좌우 분할로 돌아갑니다.</li>");
+    add("<li><b>E 이후 S 일치 찾기</b>: S는 그대로 두고 E 다음 프레임부터 S와 일치하는 프레임을 더 찾아 구간 끝을 늘립니다.</li>");
+    add("<li><b>구간 추출 (무손실)</b>: 찾은 구간을 FFV1/MKV로 저장합니다.</li>");
+    add("<li><b>PNG로 저장</b> / <b>원본 저장 (고품질 PNG)</b>: 현재 프레임을 저장합니다. "
+        "고품질 쪽은 영상의 색 행렬/범위와 10비트 이상 색심도를 반영합니다.</li>");
+    add("</ul>");
+    add("<h4>비교 방식</h4>");
+    add("<ul>");
+    add("<li><b>MAE</b>: 픽셀 값 차이. 무손실/고화질 영상</li>");
+    add("<li><b>SSIM</b>: 구조 기준. 압축 노이즈, 블러가 있는 영상</li>");
+    add("<li><b>NCC</b>: 밝기·대비 변화 무시. 페이드, 자동 노출</li>");
+    add("</ul>");
+    add("<p>방식을 바꾸면 일치도가 그 방식의 기본값으로 돌아갑니다. "
+        "못 찾으면 일치도를 낮추고, 엉뚱한 곳에서 멈추면 높이세요.</p>");
+    add("<h4>단축키</h4>");
+    add("<table cellpadding='2'>");
+    add("<tr><td><b>W</b> / <b>→</b></td><td>다음 프레임</td></tr>");
+    add("<tr><td><b>B</b> / <b>←</b></td><td>이전 프레임</td></tr>");
+    add("<tr><td><b>Shift+W</b></td><td>5프레임 앞으로</td></tr>");
+    add("<tr><td><b>Shift+B</b></td><td>5프레임 뒤로</td></tr>");
+    add("<tr><td><b>Space</b></td><td>구간 반복 재생 / 정지</td></tr>");
+    add("<tr><td><b>O</b></td><td>겹쳐 보기 켜기/끄기</td></tr>");
+    add("<tr><td><b>F1</b></td><td>도움말</td></tr>");
+    add("</table>");
+    box.setText(html);
     box.exec();
 }
 
@@ -395,7 +425,7 @@ bool MainWindow::open_video(const QString& path) {
     loop_cur_ = -1;
     loop_dec_next_ = -1;
     timeline_->set_frame_count(count_);
-    start_label_->setText(tr("S: 없음"));
+    update_start_label();
     show_result({});
     progress_->setValue(0);
     frame_spin_->blockSignals(true);
@@ -458,15 +488,58 @@ void MainWindow::set_overlay(bool on) {
     apply_overlay();
 }
 
+namespace {
+struct Tint {
+    const char* name;
+    QColor color;
+};
+const Tint kTints[] = {
+    {QT_TR_NOOP("없음"), Qt::white},           {QT_TR_NOOP("빨강"), QColor(255, 0, 0)},
+    {QT_TR_NOOP("초록"), QColor(0, 255, 0)},   {QT_TR_NOOP("파랑"), QColor(0, 0, 255)},
+    {QT_TR_NOOP("시안"), QColor(0, 255, 255)},
+};
+}  // namespace
+
 void MainWindow::cycle_tint() {
-    struct Tint { const char* name; QColor color; };
-    static const Tint tints[] = {
-        {"없음", Qt::white}, {"빨강", QColor(255, 0, 0)}, {"초록", QColor(0, 255, 0)},
-        {"파랑", QColor(0, 0, 255)}, {"시안", QColor(0, 255, 255)},
-    };
-    tint_ = (tint_ + 1) % static_cast<int>(std::size(tints));
-    tint_btn_->setText(tr("색상 필터: %1").arg(tr(tints[tint_].name)));
-    view_->set_blend_tint(tints[tint_].color);
+    tint_ = (tint_ + 1) % static_cast<int>(std::size(kTints));
+    view_->set_blend_tint(kTints[tint_].color);
+    update_tint_text();
+}
+
+void MainWindow::update_tint_text() {
+    tint_btn_->setText(tr("색상 필터: %1").arg(tr(kTints[tint_].name)));
+}
+
+void MainWindow::update_start_label() {
+    start_label_->setText(start_ >= 0 ? tr("S: %1").arg(start_) : tr("S: 없음"));
+}
+
+void MainWindow::update_loop_caption() {
+    const QColor color(255, 170, 0, 230);
+    if (!loop_) return loop_view_->set_caption(tr("반복 구간"), color);
+    loop_view_->set_caption(tr("반복 구간 [%1, %2] · %3")
+                                .arg(loop_->start)
+                                .arg(loop_->end)
+                                .arg(format_time(loop_->end - loop_->start + 1, dec_.fps())),
+                            color);
+}
+
+void MainWindow::retranslate_ui() {
+    for (const auto& fn : retranslators_) fn();
+    show_result({});  // status messages are transient, so they are dropped rather than left in the old language
+    view_->set_caption(tr("원본"), QColor(40, 90, 200, 220));
+    update_loop_caption();
+    update_tint_text();
+    update_start_label();
+    update_info();
+    update_format_ui();
+    language_btn_->setText(i18n::language() == i18n::Lang::English ? QStringLiteral("한국어")
+                                                                   : QStringLiteral("English"));
+}
+
+void MainWindow::changeEvent(QEvent* e) {
+    if (e->type() == QEvent::LanguageChange && view_) retranslate_ui();
+    QMainWindow::changeEvent(e);
 }
 
 void MainWindow::apply_overlay() {
@@ -487,7 +560,7 @@ void MainWindow::set_start_from_current() {
     if (count_ <= 0 || busy()) return;
     start_ = cur_;
     timeline_->set_start(start_);
-    start_label_->setText(tr("S: %1").arg(start_));
+    update_start_label();
     invalidate_loop();
     update_enabled();
 }
@@ -732,7 +805,7 @@ void MainWindow::on_search_done(const LoopResult& r) {
         loop_ = r.range;
         start_ = r.range.start;
         timeline_->set_start(start_);
-        start_label_->setText(tr("S: %1").arg(start_));
+        update_start_label();
         progress_->setValue(1000);
         timeline_->set_loop(r.range.start, r.range.end);
         show_result(tr("반복 구간 [%1, %2] · %3프레임 · 길이 %4 · 유사도 %5%")
@@ -744,11 +817,7 @@ void MainWindow::on_search_done(const LoopResult& r) {
         show_frame(r.range.start);
         loop_dec_next_ = -1;
         if (loop_dec_.open(path_.toStdString())) {
-            loop_view_->set_caption(tr("반복 구간 [%1, %2] · %3")
-                                        .arg(r.range.start)
-                                        .arg(r.range.end)
-                                        .arg(format_time(r.range.end - r.range.start + 1, dec_.fps())),
-                                    QColor(255, 170, 0, 230));
+            update_loop_caption();
             show_loop_frame(r.range.start);
             apply_overlay();  // split view (equal halves) or blended onto the original
         }

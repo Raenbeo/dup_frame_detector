@@ -7,10 +7,13 @@
 #include <QString>
 #include <QTimer>
 
+#include <functional>
 #include <optional>
+#include <vector>
 #include <thread>
 
 class QComboBox;
+class QEvent;
 class QLabel;
 class QProgressBar;
 class QPushButton;
@@ -34,6 +37,7 @@ public:
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
 public:
 
@@ -81,6 +85,10 @@ private:
     void show_help();
     void show_loop_frame(int index);
     void cycle_tint();
+    void update_tint_text();
+    void update_start_label();
+    void update_loop_caption();
+    void retranslate_ui();  // re-applies every translatable text after a language switch
     void apply_overlay();  // overlay mode: loop frame blended onto the original view
     void invalidate_loop();
     void run_search(std::optional<LoopRange> prev);
@@ -135,6 +143,8 @@ private:
     QPushButton* overlay_btn_ = nullptr;
     QSlider* overlay_slider_ = nullptr;
     QPushButton* tint_btn_ = nullptr;
+    QPushButton* language_btn_ = nullptr;
+    std::vector<std::function<void()>> retranslators_;
     int tint_ = 0;  // index into the colour-filter cycle
     QPushButton* export_btn_ = nullptr;
     QPushButton* save_png_btn_ = nullptr;
