@@ -14,6 +14,7 @@
 #include <QKeySequence>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QShortcut>
@@ -149,6 +150,9 @@ void MainWindow::build_ui() {
     row4->addWidget(format_label_, 1);
     row4->addWidget(save_native_btn_);
     row4->addWidget(save_png_btn_);
+    help_btn_ = new QPushButton(tr("도움말"));
+    help_btn_->setToolTip(tr("사용법과 단축키 (F1)"));
+    row4->addWidget(help_btn_);
     root->addLayout(row4);
 
     setCentralWidget(central);
@@ -204,10 +208,59 @@ void MainWindow::build_ui() {
     connect(left, &QShortcut::activated, this, [this] { scrub(cur_ - 1); });
     auto* right = new QShortcut(QKeySequence(Qt::Key_Right), this);
     connect(right, &QShortcut::activated, this, [this] { scrub(cur_ + 1); });
+    const std::pair<QKeyCombination, int> steps[] = {
+        {Qt::Key_W, 1},
+        {Qt::SHIFT | Qt::Key_W, 5},
+        {Qt::Key_B, -1},
+        {Qt::SHIFT | Qt::Key_B, -5},
+    };
+    for (const auto& [key, step] : steps) {
+        auto* sc = new QShortcut(QKeySequence(key), this);
+        connect(sc, &QShortcut::activated, this, [this, step] { scrub(cur_ + step); });
+    }
+    connect(help_btn_, &QPushButton::clicked, this, &MainWindow::show_help);
+    auto* help = new QShortcut(QKeySequence(Qt::Key_F1), this);
+    connect(help, &QShortcut::activated, this, &MainWindow::show_help);
     auto* space = new QShortcut(QKeySequence(Qt::Key_Space), this);
     connect(space, &QShortcut::activated, this, [this] {
         if (loop_) set_playing(!playing());
     });
+}
+
+void MainWindow::show_help() {
+    QMessageBox box(this);
+    box.setWindowTitle(tr("도움말"));
+    box.setTextFormat(Qt::RichText);
+    box.setText(tr(
+        "<h3>반복 구간 찾기</h3>"
+        "<p>기준 프레임 <b>S</b>를 고르면 S+1부터 차례로 비교해서 S와 같은 프레임 <b>E</b>를 찾습니다. "
+        "반복 구간은 <b>[S, E-1]</b>입니다.</p>"
+        "<h4>사용 순서</h4>"
+        "<ol>"
+        "<li><b>열기...</b>로 영상을 엽니다. 경로 칸에 직접 입력해도 됩니다.</li>"
+        "<li>원하는 프레임으로 이동한 뒤 <b>현재 프레임을 S로</b>를 누릅니다.</li>"
+        "<li>자막, 시계처럼 바뀌는 부분은 화면에 <b>브러시</b>로 칠해 비교에서 뺍니다.</li>"
+        "<li><b>비교 방식</b>과 <b>일치도</b>를 고른 뒤 <b>탐색</b>을 누릅니다.</li>"
+        "<li>찾으면 타임라인에 구간이 표시되고 <b>구간 반복 재생</b>, <b>구간 추출</b>을 쓸 수 있습니다.</li>"
+        "</ol>"
+        "<h4>비교 방식</h4>"
+        "<ul>"
+        "<li><b>MAE</b>: 픽셀 값 차이. 무손실/고화질 영상</li>"
+        "<li><b>SSIM</b>: 구조 기준. 압축 노이즈, 블러가 있는 영상</li>"
+        "<li><b>NCC</b>: 밝기·대비 변화 무시. 페이드, 자동 노출</li>"
+        "</ul>"
+        "<p>방식을 바꾸면 일치도가 그 방식의 기본값으로 돌아갑니다. "
+        "못 찾으면 일치도를 낮추고, 엉뚱한 곳에서 멈추면 높이세요.</p>"
+        "<h4>단축키</h4>"
+        "<table cellpadding='2'>"
+        "<tr><td><b>W</b> / <b>→</b></td><td>다음 프레임</td></tr>"
+        "<tr><td><b>B</b> / <b>←</b></td><td>이전 프레임</td></tr>"
+        "<tr><td><b>Shift+W</b></td><td>5프레임 앞으로</td></tr>"
+        "<tr><td><b>Shift+B</b></td><td>5프레임 뒤로</td></tr>"
+        "<tr><td><b>Space</b></td><td>구간 반복 재생 / 정지</td></tr>"
+        "<tr><td><b>F1</b></td><td>도움말</td></tr>"
+        "</table>"));
+    box.exec();
 }
 
 Metric MainWindow::metric() const {

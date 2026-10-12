@@ -65,6 +65,7 @@ signals:
 private:
     void build_ui();
     void scrub(int frame);
+    void show_help();
     void invalidate_loop();
     void on_search_done(const LoopResult& r);
     void on_export_done(const ExportResult& r, const QString& path);
@@ -108,6 +109,7 @@ private:
     QPushButton* export_btn_ = nullptr;
     QPushButton* save_png_btn_ = nullptr;
     QPushButton* save_native_btn_ = nullptr;
+    QPushButton* help_btn_ = nullptr;
     QLabel* format_label_ = nullptr;
     QProgressBar* progress_ = nullptr;
     QLabel* result_ = nullptr;
