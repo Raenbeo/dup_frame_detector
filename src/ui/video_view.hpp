@@ -3,6 +3,7 @@
 #include <opencv2/core.hpp>
 
 #include <QImage>
+#include <QString>
 #include <QPointF>
 #include <QWidget>
 
@@ -17,6 +18,8 @@ public:
 
     void set_frame(const cv::Mat& bgr);  // reallocates the mask if the size changed
     void clear_frame();
+    // Text shown while no frame is loaded. Empty -> default prompt.
+    void set_message(const QString& text);
 
     // Highlight border: current frame lies inside the found loop.
     void set_in_loop(bool in_loop);
@@ -53,6 +56,7 @@ private:
     void reset_mask(cv::Size size);
 
     QImage frame_;
+    QString message_;
     QImage overlay_;  // ARGB32_Premultiplied, mirrors mask_
     cv::Mat mask_;    // CV_8UC1, 255 = excluded
     int radius_ = 20;

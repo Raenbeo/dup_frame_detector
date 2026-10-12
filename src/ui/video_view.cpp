@@ -28,6 +28,11 @@ void VideoView::set_frame(const cv::Mat& bgr) {
     update();
 }
 
+void VideoView::set_message(const QString& text) {
+    message_ = text;
+    update();
+}
+
 void VideoView::clear_frame() {
     frame_ = QImage();
     mask_.release();
@@ -110,7 +115,7 @@ void VideoView::paintEvent(QPaintEvent*) {
     p.fillRect(rect(), Qt::black);
     if (frame_.isNull()) {
         p.setPen(Qt::gray);
-        p.drawText(rect(), Qt::AlignCenter, tr("영상을 여세요"));
+        p.drawText(rect(), Qt::AlignCenter, message_.isEmpty() ? tr("영상을 여세요") : message_);
         return;
     }
     const QRectF r = image_rect();

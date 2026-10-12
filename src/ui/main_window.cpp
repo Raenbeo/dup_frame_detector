@@ -299,9 +299,13 @@ void MainWindow::dropEvent(QDropEvent* event) {
 bool MainWindow::open_video(const QString& path) {
     if (busy()) return false;
     set_playing(false);
+    const QString name = QFileInfo(path).fileName();
+    view_->set_message(tr("%1 로딩중...").arg(name));
+    view_->repaint();  // show the message now; opening blocks the UI thread
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const bool ok = dec_.open(path.toStdString());
     QApplication::restoreOverrideCursor();
+    view_->set_message({});
     if (!ok) {
         count_ = 0;
         cur_bgr_.release();
