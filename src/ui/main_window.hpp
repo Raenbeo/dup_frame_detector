@@ -66,6 +66,7 @@ public:
     bool overlay() const;
     int tint() const { return tint_; }
     void set_overlay(bool on);
+    int play_interval_ms() const;
     bool playing() const { return play_timer_.isActive(); }
     Metric metric() const;
     void set_metric(Metric m);  // also resets the threshold to the metric's default
@@ -140,6 +141,7 @@ private:
     QPushButton* next_btn_ = nullptr;
     QPushButton* cancel_btn_ = nullptr;
     QPushButton* play_btn_ = nullptr;
+    QComboBox* speed_combo_ = nullptr;
     QPushButton* overlay_btn_ = nullptr;
     QSlider* overlay_slider_ = nullptr;
     QPushButton* tint_btn_ = nullptr;

@@ -59,6 +59,8 @@ const Entry kTable[] = {
      "Cancel"},
     {"구간 반복 재생",
      "Play loop"},
+    {"재생 속도",
+     "Playback speed"},
     {"구간 추출 (무손실)",
      "Export loop (lossless)"},
     {"FFV1 / MKV · 원본 픽셀 포맷 그대로 · 디코드 결과가 원본과 비트 단위로 동일",

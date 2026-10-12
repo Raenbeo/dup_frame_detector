@@ -190,6 +190,12 @@ void MainWindow::build_ui() {
     row3->addWidget(progress_, 1);
     row3->addWidget(result_, 2);
     row3->addWidget(play_btn_);
+    speed_combo_ = new QComboBox;
+    for (const double speed : {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0})
+        speed_combo_->addItem(QStringLiteral("%1x").arg(speed), speed);
+    speed_combo_->setCurrentIndex(speed_combo_->findData(1.0));
+    tip(speed_combo_, "재생 속도");
+    row3->addWidget(speed_combo_);
     export_btn_ = text(new QPushButton, "구간 추출 (무손실)");
     tip(export_btn_, "FFV1 / MKV · 원본 픽셀 포맷 그대로 · 디코드 결과가 원본과 비트 단위로 동일");
     row3->addWidget(export_btn_);
@@ -274,6 +280,9 @@ void MainWindow::build_ui() {
     connect(next_btn_, &QPushButton::clicked, this, &MainWindow::start_next_search);
     connect(cancel_btn_, &QPushButton::clicked, this, &MainWindow::cancel_search);
     connect(play_btn_, &QPushButton::clicked, this, &MainWindow::set_playing);
+    connect(speed_combo_, &QComboBox::currentIndexChanged, this, [this] {
+        if (playing()) play_timer_.setInterval(play_interval_ms());
+    });
     connect(export_btn_, &QPushButton::clicked, this, [this] { export_loop(); });
     connect(save_native_btn_, &QPushButton::clicked, this, [this] { save_frame_native(); });
     connect(save_png_btn_, &QPushButton::clicked, this, [this] { save_frame_png(); });
@@ -848,8 +857,12 @@ void MainWindow::set_playing(bool playing) {
     }
     if (cur_ < loop_->start || cur_ > loop_->end) show_frame(loop_->start);
     show_loop_frame(cur_);  // cur_ is inside the loop: start both views in phase
+    play_timer_.start(play_interval_ms());
+}
+
+int MainWindow::play_interval_ms() const {
     const double fps = dec_.fps() > 0 ? dec_.fps() : 30.0;
-    play_timer_.start(std::max(1, static_cast<int>(std::lround(1000.0 / fps))));
+    return std::max(1, static_cast<int>(std::lround(1000.0 / (fps * speed_combo_->currentData().toDouble()))));
 }
 
 void MainWindow::tick() {
