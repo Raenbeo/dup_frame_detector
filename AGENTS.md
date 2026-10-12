@@ -55,9 +55,3 @@ src/
 ```
 
 - `decoder`와 `matcher`는 Qt에 의존하지 않게 유지 (단위 테스트 가능하도록).
-
-## 작업 환경 규칙
-
-- NixOS: CLI/빌드 도구는 `nix-shell`로 실행. 의존성(qt6, ffmpeg, opencv, cmake)은 `shell.nix` 또는 `flake.nix`로 관리.
-- 검색은 `fd`, `rg` 사용.
-- 작업 중 모호한 점은 사용자에게 바로 질문.
