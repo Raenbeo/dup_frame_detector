@@ -6,6 +6,7 @@
 #include <opencv2/imgproc.hpp>
 
 #include <algorithm>
+#include <vector>
 
 namespace dfd {
 
@@ -187,6 +188,90 @@ LoopResult find_loop(Decoder& dec, int start, const cv::Mat& include_mask,
     if (!dec.seek(start)) return {};
     return find_loop([&dec] { return dec.next(); }, start, dec.frame_count(), include_mask,
                      opts);
+}
+
+LoopResult find_next_loop(Decoder& dec, const LoopRange& prev, const cv::Mat& include_mask,
+                          const LoopOptions& opts) {
+    LoopResult res;
+    if (!prev.found() || !dec.seek(prev.start)) return res;
+    const int count = dec.frame_count();
+    const int len = prev.end - prev.start + 1;
+
+    const cv::Mat s = to_gray(dec.next());
+    if (s.empty()) return res;
+    if (!include_mask.empty() &&
+        (include_mask.size() != s.size() || include_mask.type() != CV_8UC1))
+        return res;
+
+    const bool coarse = opts.coarse_div > 1 && s.cols >= opts.coarse_div &&
+                        s.rows >= opts.coarse_div;
+    cv::Size csize;
+    cv::Mat mask_small;
+    if (coarse) {
+        csize = {s.cols / opts.coarse_div, s.rows / opts.coarse_div};
+        mask_small = downscale_mask(include_mask, csize);
+    }
+    const double coarse_threshold =
+        opts.threshold - (opts.metric == Metric::Mae ? 1.0 / 255.0 : 0.05);
+    const auto small = [&](const cv::Mat& g) { return coarse ? downscale(g, csize) : g; };
+    const cv::Mat& cmask = coarse ? mask_small : include_mask;
+    const double cthr = coarse ? coarse_threshold : opts.threshold;
+
+    // One cycle of the current loop; later frames are compared with the same phase.
+    std::vector<cv::Mat> cycle;
+    cycle.reserve(len);
+    const cv::Mat s_small = small(s);
+    cycle.push_back(s_small);
+
+    const int total = count - 1 - prev.start;
+    bool broke = false;  // the repetition run has ended
+    int s2 = -1;
+    cv::Mat s2_frame;
+    for (int i = prev.start + 1, done = 1; i < count; ++i, ++done) {
+        if (opts.stop.stop_requested()) {
+            res.status = LoopStatus::Cancelled;
+            return res;
+        }
+        cv::Mat f = dec.next();
+        if (f.empty()) break;
+        f = to_gray(f);
+        if (f.size() != s.size()) return res;
+        const cv::Mat fs = small(f);
+        if (i <= prev.end) {
+            cycle.push_back(fs);
+        } else {
+            if (!broke &&
+                similarity(cycle[(i - prev.start) % len], fs, cmask, opts.metric) < cthr)
+                broke = true;
+            if (broke && similarity(s_small, fs, cmask, opts.metric) >= cthr &&
+                similarity(s, f, include_mask, opts.metric) >= opts.threshold) {
+                s2 = i;
+                s2_frame = f;
+                break;
+            }
+        }
+        if (opts.progress) opts.progress(done, total);
+    }
+    if (s2 < 0) {
+        res.status = LoopStatus::NotFound;
+        return res;
+    }
+
+    // Continue the same sequential read: yield S2 first, then the following frames.
+    bool first = true;
+    LoopOptions o = opts;
+    const int off = s2 - prev.start;
+    if (opts.progress)
+        o.progress = [&opts, off](int d, int t) { opts.progress(off + d, off + t); };
+    return find_loop(
+        [&] {
+            if (first) {
+                first = false;
+                return s2_frame;
+            }
+            return dec.next();
+        },
+        s2, count, include_mask, o);
 }
 
 }  // namespace dfd

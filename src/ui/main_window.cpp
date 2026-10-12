@@ -125,6 +125,8 @@ void MainWindow::build_ui() {
     // search row
     auto* row3 = new QHBoxLayout;
     search_btn_ = new QPushButton(tr("탐색"));
+    next_btn_ = new QPushButton(tr("다음 구간 탐색"));
+    next_btn_->setToolTip(tr("현재 반복 구간의 반복이 끝난 뒤, 같은 구간이 다시 나타나는 곳을 찾음"));
     cancel_btn_ = new QPushButton(tr("취소"));
     progress_ = new QProgressBar;
     progress_->setRange(0, 1000);
@@ -133,6 +135,7 @@ void MainWindow::build_ui() {
     play_btn_ = new QPushButton(tr("구간 반복 재생"));
     play_btn_->setCheckable(true);
     row3->addWidget(search_btn_);
+    row3->addWidget(next_btn_);
     row3->addWidget(cancel_btn_);
     row3->addWidget(progress_, 1);
     row3->addWidget(result_, 2);
@@ -198,6 +201,7 @@ void MainWindow::build_ui() {
         update_enabled();
     });
     connect(search_btn_, &QPushButton::clicked, this, &MainWindow::start_search);
+    connect(next_btn_, &QPushButton::clicked, this, &MainWindow::start_next_search);
     connect(cancel_btn_, &QPushButton::clicked, this, &MainWindow::cancel_search);
     connect(play_btn_, &QPushButton::clicked, this, &MainWindow::set_playing);
     connect(export_btn_, &QPushButton::clicked, this, [this] { export_loop(); });
@@ -369,8 +373,17 @@ void MainWindow::invalidate_loop() {
 
 void MainWindow::start_search() {
     if (busy() || count_ <= 0 || start_ < 0) return;
+    run_search(std::nullopt);
+}
+
+void MainWindow::start_next_search() {
+    if (busy() || count_ <= 0 || !loop_) return;
+    run_search(loop_);
+}
+
+void MainWindow::run_search(std::optional<LoopRange> prev) {
     set_playing(false);
-    invalidate_loop();
+    if (!prev) invalidate_loop();  // a next-loop search keeps the current loop until it finds one
     worker_ = {};  // previous worker has already finished
 
     searching_ = true;
@@ -383,9 +396,11 @@ void MainWindow::start_search() {
     opts.threshold = threshold();
     const std::string path = path_.toStdString();
     const int start = start_;
+    const bool next = prev.has_value();
+    const LoopRange prev_range = prev.value_or(LoopRange{});
     const cv::Mat mask = view_->include_mask();  // deep copy: later edits don't affect the search
 
-    worker_ = std::jthread([this, path, start, mask, opts](std::stop_token st) mutable {
+    worker_ = std::jthread([this, path, start, next, prev_range, mask, opts](std::stop_token st) mutable {
         LoopResult res;
         Decoder dec;  // decoders are not shared between threads
         if (dec.open(path)) {
@@ -398,7 +413,8 @@ void MainWindow::start_search() {
                 QMetaObject::invokeMethod(
                     this, [this, p] { progress_->setValue(p); }, Qt::QueuedConnection);
             };
-            res = find_loop(dec, start, mask, opts);
+            res = next ? find_next_loop(dec, prev_range, mask, opts)
+                       : find_loop(dec, start, mask, opts);
         }
         QMetaObject::invokeMethod(
             this, [this, res] { on_search_done(res); }, Qt::QueuedConnection);
@@ -596,6 +612,9 @@ void MainWindow::on_search_done(const LoopResult& r) {
     switch (r.status) {
     case LoopStatus::Found:
         loop_ = r.range;
+        start_ = r.range.start;
+        timeline_->set_start(start_);
+        start_label_->setText(tr("S: %1").arg(start_));
         progress_->setValue(1000);
         timeline_->set_loop(r.range.start, r.range.end);
         result_->setText(tr("반복 구간 [%1, %2] · %3프레임 · 유사도 %4%")
@@ -607,7 +626,7 @@ void MainWindow::on_search_done(const LoopResult& r) {
         break;
     case LoopStatus::NotFound:
         progress_->setValue(1000);
-        result_->setText(tr("반복 없음"));
+        result_->setText(tr(loop_ ? "다음 구간 없음" : "반복 없음"));
         break;
     case LoopStatus::Cancelled:
         result_->setText(tr("취소됨"));
@@ -671,6 +690,7 @@ void MainWindow::update_enabled() {
     brush_slider_->setEnabled(idle);
     clear_mask_btn_->setEnabled(idle && view_->has_mask());
     search_btn_->setEnabled(loaded && idle && start_ >= 0);
+    next_btn_->setEnabled(loop_.has_value() && idle);
     cancel_btn_->setEnabled(busy());
     export_btn_->setEnabled(loop_.has_value() && idle);
     save_png_btn_->setEnabled(loaded && idle);

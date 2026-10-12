@@ -64,4 +64,11 @@ LoopResult find_loop(const FrameSource& next, int start, int frame_count,
 LoopResult find_loop(Decoder& dec, int start, const cv::Mat& include_mask,
                      const LoopOptions& opts);
 
+// Finds the next occurrence of a loop after `prev`: skips the rest of the current
+// repetition run (frames that keep repeating prev's cycle), then looks for the first
+// later frame matching prev.start (the loop returning after other action) and
+// searches the loop [S2, E2-1] from there. result.range.start is that new S2.
+LoopResult find_next_loop(Decoder& dec, const LoopRange& prev, const cv::Mat& include_mask,
+                          const LoopOptions& opts);
+
 }  // namespace dfd

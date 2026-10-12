@@ -34,6 +34,7 @@ public:
     void show_frame(int index);
     void set_start_from_current();
     void start_search();
+    void start_next_search();  // searches for the loop's next occurrence after the current loop
     void cancel_search();
     // Lossless (FFV1/MKV) export of the found loop. Empty path -> ask with a dialog.
     void export_loop(const QString& path = {});
@@ -67,6 +68,7 @@ private:
     void scrub(int frame);
     void show_help();
     void invalidate_loop();
+    void run_search(std::optional<LoopRange> prev);
     void on_search_done(const LoopResult& r);
     void on_export_done(const ExportResult& r, const QString& path);
     bool busy() const { return searching_ || exporting_; }
@@ -104,6 +106,7 @@ private:
     QPushButton* set_start_btn_ = nullptr;
     QPushButton* clear_mask_btn_ = nullptr;
     QPushButton* search_btn_ = nullptr;
+    QPushButton* next_btn_ = nullptr;
     QPushButton* cancel_btn_ = nullptr;
     QPushButton* play_btn_ = nullptr;
     QPushButton* export_btn_ = nullptr;
