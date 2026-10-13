@@ -62,6 +62,9 @@ public:
 
     // Decode the next frame. Empty Mat on end of stream / error.
     cv::Mat next();
+    // Decode and discard the next n frames without converting them (cheaper than
+    // next()). false on end of stream / error.
+    bool skip(int n);
 
     // Writes frames [first, last] to `path` (Matroska) as FFV1: mathematically
     // lossless, native pixel format (no RGB round trip), source timestamps and

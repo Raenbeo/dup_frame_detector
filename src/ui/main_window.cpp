@@ -44,6 +44,20 @@ QString format_time(int frames, double fps) {
         .arg(ms / 1000 % 60, 2, 10, QLatin1Char('0'))
         .arg(ms % 1000, 3, 10, QLatin1Char('0'));
 }
+
+// Make `dec` (whose next frame is `next`, -1 if unknown) return `index` next. A short
+// gap forward is decoded through, which is cheaper than seeking back to a keyframe.
+bool position(Decoder& dec, int next, int index) {
+    constexpr int kMaxSkip = 64;
+    if (next >= 0 && index > next && index - next <= kMaxSkip) return dec.skip(index - next);
+    return dec.seek(index);
+}
+
+// `from + step`, cycling from `last` back to `first`.
+int wrap_step(int from, int step, int first, int last) {
+    const int to = from + step;
+    return to <= last ? to : first + (to - last - 1) % (last - first + 1);
+}
 }  // namespace
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
@@ -191,6 +205,7 @@ void MainWindow::build_ui() {
     row3->addWidget(result_, 2);
     row3->addWidget(play_btn_);
     speed_combo_ = new QComboBox;
+    speed_combo_->setObjectName("speed");
     for (const double speed : {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0})
         speed_combo_->addItem(QStringLiteral("%1x").arg(speed), speed);
     speed_combo_->setCurrentIndex(speed_combo_->findData(1.0));
@@ -281,7 +296,9 @@ void MainWindow::build_ui() {
     connect(cancel_btn_, &QPushButton::clicked, this, &MainWindow::cancel_search);
     connect(play_btn_, &QPushButton::clicked, this, &MainWindow::set_playing);
     connect(speed_combo_, &QComboBox::currentIndexChanged, this, [this] {
-        if (playing()) play_timer_.setInterval(play_interval_ms());
+        if (!playing()) return;
+        play_timer_.setInterval(play_interval_ms());
+        restart_play_clock();
     });
     connect(export_btn_, &QPushButton::clicked, this, [this] { export_loop(); });
     connect(save_native_btn_, &QPushButton::clicked, this, [this] { save_frame_native(); });
@@ -461,7 +478,7 @@ bool MainWindow::open_video(const QString& path) {
 void MainWindow::show_frame(int index) {
     if (count_ <= 0) return;
     index = std::clamp(index, 0, count_ - 1);
-    if (index != dec_next_ && !dec_.seek(index)) {
+    if (index != dec_next_ && !position(dec_, dec_next_, index)) {
         dec_next_ = -1;
         return;
     }
@@ -486,7 +503,7 @@ void MainWindow::show_frame(int index) {
 
 void MainWindow::show_loop_frame(int index) {
     if (!loop_) return;
-    if (index != loop_dec_next_ && !loop_dec_.seek(index)) {
+    if (index != loop_dec_next_ && !position(loop_dec_, loop_dec_next_, index)) {
         loop_dec_next_ = -1;
         return;
     }
@@ -867,20 +884,38 @@ void MainWindow::set_playing(bool playing) {
     }
     if (cur_ < loop_->start || cur_ > loop_->end) show_frame(loop_->start);
     show_loop_frame(cur_);  // cur_ is inside the loop: start both views in phase
+    restart_play_clock();
     play_timer_.start(play_interval_ms());
 }
 
-int MainWindow::play_interval_ms() const {
+double MainWindow::play_rate() const {
     const double fps = dec_.fps() > 0 ? dec_.fps() : 30.0;
-    return std::max(1, static_cast<int>(std::lround(1000.0 / (fps * speed_combo_->currentData().toDouble()))));
+    return fps * speed_combo_->currentData().toDouble();
+}
+
+int MainWindow::play_interval_ms() const {
+    // Never tick faster than the display refreshes; at high speeds tick() skips frames.
+    constexpr int kMinTickMs = 15;
+    return std::max(kMinTickMs, static_cast<int>(std::lround(1000.0 / play_rate())));
+}
+
+void MainWindow::restart_play_clock() {
+    play_clock_.restart();
+    play_frames_ = 0;
 }
 
 void MainWindow::tick() {
     if (!loop_) return set_playing(false);
+    // Advance by however many frames are due on the wall clock, so the speed holds
+    // even when ticks arrive late or a frame takes longer than its interval to show.
+    const auto due = static_cast<qint64>(play_clock_.elapsed() * play_rate() / 1000.0);
+    const int step = static_cast<int>(due - play_frames_);
+    if (step <= 0) return;
+    play_frames_ = due;
     // The original runs on past E (restarting at S after the last frame);
     // the loop view cycles [S, E] on the same clock.
-    show_frame(cur_ >= count_ - 1 ? loop_->start : cur_ + 1);
-    show_loop_frame(loop_cur_ >= loop_->end ? loop_->start : loop_cur_ + 1);
+    show_frame(wrap_step(cur_, step, loop_->start, count_ - 1));
+    show_loop_frame(wrap_step(loop_cur_, step, loop_->start, loop_->end));
 }
 
 void MainWindow::update_info() {

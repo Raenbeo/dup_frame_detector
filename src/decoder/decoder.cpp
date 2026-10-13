@@ -229,6 +229,16 @@ cv::Mat Decoder::next() {
     return d.to_bgr();
 }
 
+bool Decoder::skip(int n) {
+    auto& d = *impl_;
+    if (!d.fmt) return false;
+    for (; n > 0; --n) {
+        if (!d.pending && !d.decode()) return false;
+        d.pending = false;
+    }
+    return true;
+}
+
 namespace {
 
 std::string av_err(int code) {

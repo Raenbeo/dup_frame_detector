@@ -3,6 +3,7 @@
 #include "decoder/decoder.hpp"
 #include "matcher/matcher.hpp"
 
+#include <QElapsedTimer>
 #include <QMainWindow>
 #include <QString>
 #include <QTimer>
@@ -66,6 +67,7 @@ public:
     bool overlay() const;
     int tint() const { return tint_; }
     void set_overlay(bool on);
+    double play_rate() const;  // frames per second at the selected speed
     int play_interval_ms() const;
     bool playing() const { return play_timer_.isActive(); }
     Metric metric() const;
@@ -101,6 +103,7 @@ private:
     // Status text; the label is clipped instead of widening the window, full text in tooltip.
     void show_result(const QString& text);
     void update_enabled();
+    void restart_play_clock();
     void tick();
 
     Decoder dec_;
@@ -156,6 +159,8 @@ private:
     QProgressBar* progress_ = nullptr;
     QLabel* result_ = nullptr;
     QTimer play_timer_;
+    QElapsedTimer play_clock_;  // wall time since playback (re)started at this speed
+    qint64 play_frames_ = 0;    // frames advanced since play_clock_ started
 
     std::jthread worker_;  // keep last: joined first on destruction
 };

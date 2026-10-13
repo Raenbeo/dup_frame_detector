@@ -8,6 +8,7 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QComboBox>
 #include <QLabel>
 #include <QPushButton>
 #include <QElapsedTimer>
@@ -160,6 +161,28 @@ int main(int argc, char** argv) {
     }
     CHECK(min_seen >= 10 && max_seen <= 39 && wrapped);
     CHECK(orig_max > 39);  // original keeps playing past E
+
+    // 16x holds on the wall clock: 30 fps * 16 = 480 frames/s, even though frames
+    // can't be shown that fast (ticks skip frames instead of falling behind).
+    // Every speed holds on the wall clock: 30 fps * speed frames/s.
+    auto* speed = w.findChild<QComboBox*>("speed");
+    CHECK(speed);
+    for (int i = 0; speed && i < speed->count(); ++i) {
+        const double s = speed->itemData(i).toDouble();
+        speed->setCurrentIndex(i);
+        int advanced = 0;
+        prev = w.current_frame();
+        t.restart();
+        while (t.elapsed() < 1000) {
+            QTest::qWait(5);
+            const int c = w.current_frame();
+            advanced += (c - prev + 80) % 80;  // original cycles the 80 frames [10, 89]
+            prev = c;
+        }
+        std::printf("%gx: %d frames in 1 s (target %g)\n", s, advanced, 30 * s);
+        CHECK(std::abs(advanced - 30 * s) <= 0.15 * 30 * s + 3);
+    }
+    speed->setCurrentIndex(speed->findData(1.0));
     w.timeline()->frameRequested(50);  // user scrub stops playback
     CHECK(!w.playing() && w.current_frame() == 50);
 
