@@ -191,7 +191,7 @@ void MainWindow::build_ui() {
     row3->addWidget(result_, 2);
     row3->addWidget(play_btn_);
     speed_combo_ = new QComboBox;
-    for (const double speed : {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0})
+    for (const double speed : {0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 4.0, 8.0, 16.0})
         speed_combo_->addItem(QStringLiteral("%1x").arg(speed), speed);
     speed_combo_->setCurrentIndex(speed_combo_->findData(1.0));
     tip(speed_combo_, "재생 속도");
